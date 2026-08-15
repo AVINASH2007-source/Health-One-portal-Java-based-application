@@ -57,16 +57,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const metaName = authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'User'
         const cleanEmail = authUser.email || ''
 
-        const { error: insErr } = await supabase.from('profiles').insert({
+        await supabase.from('profiles').insert({
           id: userId,
           role: metaRole,
           name: metaName,
           email: cleanEmail,
         })
 
-        if (!insErr) {
-          return { role: metaRole, name: metaName, email: cleanEmail }
-        }
+        // Always return valid profile for active user session so page refreshes never fail
+        return { role: metaRole, name: metaName, email: cleanEmail }
       }
 
       return null
