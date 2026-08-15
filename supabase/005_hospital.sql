@@ -8,8 +8,20 @@ alter table public.profiles
 drop policy if exists "profiles: hospital links unassigned doctor" on public.profiles;
 create policy "profiles: hospital links unassigned doctor" 
   on public.profiles for update 
-  using (role = 'doctor' and hospital_id is null) 
+  using (role = 'doctor' and (hospital_id is null or hospital_id = auth.uid())) 
   with check (hospital_id = auth.uid());
+
+-- RLS Policy: Hospital/authenticated users can read doctor profiles for lookup & staff list
+drop policy if exists "profiles: read doctors for hospital" on public.profiles;
+create policy "profiles: read doctors for hospital" 
+  on public.profiles for select 
+  using (
+    role = 'doctor' 
+    or auth.uid() = id 
+    or exists (
+      select 1 from public.profiles where profiles.id = auth.uid() and profiles.role = 'hospital'
+    )
+  );
 
 -- 2. Create the departments table
 create table if not exists public.departments (
