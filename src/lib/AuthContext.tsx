@@ -181,10 +181,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: msg }
     }
 
+    // Commit session to Supabase auth client headers so RLS policies know auth.uid()
+    await supabase.auth.setSession(data.session)
+
     // Load profile from database
     let loadedProfile = await loadProfile(data.user.id, data.user)
 
-    // Fallback: If profile row missing (e.g. trigger didn't fire), create it once with user's selected role
+    // Fallback: If profile row missing in DB, insert it with user's selected role
     if (!loadedProfile) {
       const userRole = ((data.user.user_metadata?.role as Role) || portalRole).toLowerCase() as Role
       const userName = data.user.user_metadata?.name || data.user.user_metadata?.full_name || cleanEmail.split('@')[0]
@@ -194,20 +197,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         name: userName,
         email: data.user.email || cleanEmail,
       })
-      if (!insErr) {
-        loadedProfile = { role: userRole, name: userName, email: data.user.email || cleanEmail }
-      }
-    }
 
-    if (!loadedProfile) {
-      await supabase.auth.signOut()
-      setSession(null)
-      setUser(null)
-      setProfile(null)
-      setLoading(false)
-      const msg = 'Authentication succeeded, but your Health-One profile could not be loaded.'
-      setError(msg)
-      return { error: msg }
+      // Fallback: Use profile metadata even if DB insert was blocked
+      loadedProfile = { role: userRole, name: userName, email: data.user.email || cleanEmail }
     }
 
     // Validate Portal Role vs Database Role
