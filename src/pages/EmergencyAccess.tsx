@@ -167,19 +167,7 @@ export default function EmergencyAccess() {
         console.warn('Emergency access log write notice:', logErr.message)
       }
 
-      // 3. Fallback write to emergency_access_logs if present
-      try {
-        await supabase.from('emergency_access_logs').insert({
-          patient_id: targetPatientId,
-          accessed_at: new Date().toISOString(),
-          access_method: session?.user ? 'Doctor Portal / QR Scan' : 'Public QR Scan Link',
-          note: `[License Verified: ${cleanLicense}] ${accessReason.trim()}`,
-        })
-      } catch {
-        // Optional table fallback ignored
-      }
-
-      // 4. Scoped Emergency Card Fetch
+      // 3. Scoped Emergency Card Fetch
       const { data: emCard, error: fetchErr } = await supabase
         .rpc('get_emergency_card_scoped', { target_patient_id: targetPatientId })
 

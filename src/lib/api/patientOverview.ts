@@ -28,7 +28,7 @@ export interface Appointment {
   patient_id: string
   doctor_name: string
   department: string | null
-  scheduled_at: string
+  time: string
   reason: string | null
   status: string
   created_at: string
@@ -123,7 +123,7 @@ export async function getUpcomingAppointments(patientId: string): Promise<Appoin
     .select('*')
     .eq('patient_id', patientId)
     .eq('status', 'upcoming')
-    .order('scheduled_at', { ascending: true })
+    .order('time', { ascending: true })
     .limit(3)
 
   if (error) {

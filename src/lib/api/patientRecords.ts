@@ -326,15 +326,17 @@ export async function uploadPatientDocument(
   // 1. Storage Upload
   try {
     const { data: uploadData, error: uploadErr } = await supabase.storage
-      .from('medical-records')
+      .from('medical-documents')
       .upload(fileName, file, { cacheControl: '3600', upsert: false })
 
     if (uploadErr) {
       console.warn('Storage notice:', uploadErr.message)
     } else if (uploadData) {
-      const { data: publicUrlData } = supabase.storage.from('medical-records').getPublicUrl(fileName)
-      if (publicUrlData?.publicUrl) {
-        attachmentPath = publicUrlData.publicUrl
+      const { data: signedUrlData, error: signedErr } = await supabase.storage
+        .from('medical-documents')
+        .createSignedUrl(fileName, 60 * 60) // 1-hour signed URL (private bucket)
+      if (!signedErr && signedUrlData?.signedUrl) {
+        attachmentPath = signedUrlData.signedUrl
       }
     }
   } catch (stgErr) {

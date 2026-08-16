@@ -440,10 +440,10 @@ export default function Overview() {
                     </div>
                     <div className="text-right shrink-0">
                       <span className="rounded-full bg-vital-soft px-2 py-0.5 text-[10px] text-vital font-medium">
-                        {formatDate(app.scheduled_at)}
+                        {formatDate(app.time)}
                       </span>
-                      {formatTime(app.scheduled_at) && (
-                        <p className="mt-1 text-[10px] text-mist">{formatTime(app.scheduled_at)}</p>
+                      {formatTime(app.time) && (
+                        <p className="mt-1 text-[10px] text-mist">{formatTime(app.time)}</p>
                       )}
                     </div>
                   </div>

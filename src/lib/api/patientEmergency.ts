@@ -94,10 +94,10 @@ export async function regenerateEmergencyCode(patientId: string): Promise<string
 
 export async function getRecentEmergencyAccess(patientId: string): Promise<EmergencyAccessLog[]> {
   const { data, error } = await supabase
-    .from('emergency_access_logs')
+    .from('emergency_access_log')
     .select('*')
     .eq('patient_id', patientId)
-    .order('accessed_at', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(10)
 
   if (error) {
