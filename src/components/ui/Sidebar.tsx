@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion'
 import { NavLink } from 'react-router-dom'
-import { ChevronsLeft, ChevronsRight, HeartPulse } from 'lucide-react'
+import { ChevronsLeft, ChevronsRight, HeartPulse, X } from 'lucide-react'
 import { Role, navByRole } from '../../lib/navConfig'
 import VitalLine from './VitalLine'
 
@@ -8,36 +8,56 @@ export default function Sidebar({
   role,
   collapsed,
   onToggle,
+  onNavigate,
+  isMobile,
 }: {
   role: Role
   collapsed: boolean
   onToggle: () => void
+  onNavigate?: () => void
+  isMobile?: boolean
 }) {
   const items = navByRole[role]
 
   return (
     <motion.aside
-      animate={{ width: collapsed ? 76 : 264 }}
-      transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-      className="glass sticky top-0 flex h-screen flex-col border-r border-edge px-3 py-4"
+      animate={{ width: isMobile ? 288 : collapsed ? 76 : 264 }}
+      transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+      className="glass flex h-full flex-col border-r border-edge px-3 py-4 bg-void/95 shadow-2xl md:shadow-none"
     >
-      <div className="mb-4 flex items-center gap-2 px-2">
-        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-vital-soft">
-          <HeartPulse size={18} className="text-vital" />
+      <div className="mb-4 flex items-center justify-between px-2">
+        <div className="flex items-center gap-2">
+          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-vital-soft">
+            <HeartPulse size={18} className="text-vital" />
+          </div>
+          {(!collapsed || isMobile) && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}>
+              <p className="font-display text-sm font-semibold leading-none">Health-One</p>
+              <p className="text-[11px] text-mist">Lifetime Health Record</p>
+            </motion.div>
+          )}
         </div>
-        {!collapsed && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}>
-            <p className="font-display text-sm font-semibold leading-none">Health-One</p>
-            <p className="text-[11px] text-mist">Lifetime Health Record</p>
-          </motion.div>
+
+        {isMobile && (
+          <button
+            onClick={onToggle}
+            className="rounded-xl p-1.5 text-mist hover:bg-panel2 hover:text-ink md:hidden"
+          >
+            <X size={18} />
+          </button>
         )}
       </div>
 
-      {!collapsed && <VitalLine height={24} className="mb-3 px-2 opacity-70" />}
+      {(!collapsed || isMobile) && <VitalLine height={24} className="mb-3 px-2 opacity-70" />}
 
       <nav className="flex-1 space-y-1 overflow-y-auto">
         {items.map((item, i) => (
-          <NavLink key={item.path} to={item.path} end={item.path.split('/').length <= 2}>
+          <NavLink
+            key={item.path}
+            to={item.path}
+            end={item.path.split('/').length <= 2}
+            onClick={onNavigate}
+          >
             {({ isActive }) => (
               <motion.div
                 initial={{ opacity: 0, x: -8 }}
@@ -45,7 +65,7 @@ export default function Sidebar({
                 transition={{ delay: i * 0.03 }}
                 whileHover={{ x: 3 }}
                 className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
-                  isActive ? 'bg-vital-soft text-vital' : 'text-mist hover:bg-panel2 hover:text-ink'
+                  isActive ? 'bg-vital-soft text-vital font-medium' : 'text-mist hover:bg-panel2 hover:text-ink'
                 }`}
               >
                 {isActive && (
@@ -55,20 +75,22 @@ export default function Sidebar({
                     transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                   />
                 )}
-                <item.icon size={17} className="relative shrink-0" />
-                {!collapsed && <span className="relative truncate">{item.label}</span>}
+                <item.icon size={18} className="relative shrink-0" />
+                {(!collapsed || isMobile) && <span className="relative truncate">{item.label}</span>}
               </motion.div>
             )}
           </NavLink>
         ))}
       </nav>
 
-      <button
-        onClick={onToggle}
-        className="mt-2 flex items-center justify-center gap-2 rounded-xl border border-edge py-2 text-mist hover:text-ink"
-      >
-        {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
-      </button>
+      {!isMobile && (
+        <button
+          onClick={onToggle}
+          className="mt-2 flex items-center justify-center gap-2 rounded-xl border border-edge py-2 text-mist hover:text-ink transition-colors"
+        >
+          {collapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
+        </button>
+      )}
     </motion.aside>
   )
 }

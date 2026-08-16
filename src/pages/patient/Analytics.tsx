@@ -1,117 +1,71 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { LineChart as ChartIcon, FileText, Pill, Calendar, TrendingUp, Activity, BarChart2, Sparkles, Brain, ShieldCheck, CheckCircle2 } from 'lucide-react'
+import {
+  FileText,
+  Pill,
+  TrendingUp,
+  Activity,
+  BarChart2,
+  Sparkles,
+  Brain,
+  ShieldCheck,
+  CheckCircle2,
+  AlertCircle,
+  Heart,
+} from 'lucide-react'
 import { ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts'
 import Card from '../../components/ui/Card'
 import StatCard from '../../components/ui/StatCard'
 import Skeleton from '../../components/ui/Skeleton'
 import AIAssistantBubble from '../../components/ui/AIAssistantBubble'
 import { useAuth } from '../../lib/AuthContext'
-import { supabase } from '../../lib/supabase'
 import { generateHealthInsight } from '../../lib/gemini'
-
-type MedicalRecord = {
-  id: string
-  occurred_at: string
-  record_type: string
-  title?: string
-}
-
-type Medication = {
-  id: string
-  start_date: string
-  end_date: string | null
-}
-
-type MonthTrend = {
-  month: string
-  recordsCount: number
-  activeMeds: number
-}
+import {
+  getHealthAnalyticsSummary,
+  HealthAnalyticsSummary,
+} from '../../lib/api/patientAnalytics'
 
 export default function Analytics() {
   const { session, name } = useAuth()
   const [loading, setLoading] = useState(true)
-  const [records, setRecords] = useState<MedicalRecord[]>([])
-  const [medications, setMedications] = useState<Medication[]>([])
-  const [monthlyTrends, setMonthlyTrends] = useState<MonthTrend[]>([])
-  const [typeDistribution, setTypeDistribution] = useState<{ name: string; count: number }[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [data, setData] = useState<HealthAnalyticsSummary | null>(null)
   const [aiInsightMessage, setAiInsightMessage] = useState<string>('')
 
   useEffect(() => {
-    if (!session?.user?.id) return
+    const userId = session?.user?.id
+    if (!userId) return
 
     let active = true
-    const fetchAnalyticsData = async () => {
+    const fetchAnalytics = async () => {
       setLoading(true)
+      setError(null)
 
-      const [recRes, medRes] = await Promise.all([
-        supabase.from('records').select('id, occurred_at, record_type, title').eq('patient_id', session.user.id),
-        supabase.from('medications').select('id, start_date, end_date').eq('patient_id', session.user.id),
-      ])
+      try {
+        const summary = await getHealthAnalyticsSummary(userId)
+        if (!active) return
 
-      if (active) {
-        const fetchedRecs = recRes.data || []
-        const fetchedMeds = medRes.data || []
-        setRecords(fetchedRecs)
-        setMedications(fetchedMeds)
-
-        // Process client-side monthly grouping (last 6 months)
-        const monthsMap: Record<string, { recordsCount: number; activeMeds: number }> = {}
-        const now = new Date()
-
-        for (let i = 5; i >= 0; i--) {
-          const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-          const key = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
-          monthsMap[key] = { recordsCount: 0, activeMeds: 0 }
-        }
-
-        // Count records per month
-        fetchedRecs.forEach((r) => {
-          if (!r.occurred_at) return
-          const d = new Date(r.occurred_at)
-          const key = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
-          if (monthsMap[key]) {
-            monthsMap[key].recordsCount += 1
-          }
-        })
-
-        const trendArray: MonthTrend[] = Object.entries(monthsMap).map(([month, data]) => ({
-          month,
-          recordsCount: data.recordsCount,
-          activeMeds: fetchedMeds.length,
-        }))
-
-        // Type distribution
-        const typeCounts: Record<string, number> = {}
-        fetchedRecs.forEach((r) => {
-          const typeLabel = r.record_type ? r.record_type.replace('_', ' ') : 'other'
-          typeCounts[typeLabel] = (typeCounts[typeLabel] || 0) + 1
-        })
-
-        const typeDist = Object.entries(typeCounts).map(([name, count]) => ({
-          name: name.charAt(0).toUpperCase() + name.slice(1),
-          count,
-        }))
-
-        setMonthlyTrends(trendArray)
-        setTypeDistribution(typeDist)
+        setData(summary)
         setLoading(false)
 
         // Generate Gemini AI Insights
-        const recentTitles = fetchedRecs.slice(0, 3).map((r) => r.title || r.record_type)
         generateHealthInsight({
           patientName: name,
-          recordsCount: fetchedRecs.length,
-          activeMedsCount: fetchedMeds.length,
-          recentTitles,
+          recordsCount: summary.totalRecordsCount,
+          activeMedsCount: summary.activeMedicationsCount,
+          recentTitles: summary.recentTitles,
         }).then((insight) => {
           if (active) setAiInsightMessage(insight)
         })
+      } catch (err) {
+        if (!active) return
+        console.error('Failed to load health analytics:', err)
+        setError(err instanceof Error ? err.message : 'Unable to load health analytics data.')
+        setLoading(false)
       }
     }
 
-    fetchAnalyticsData()
+    fetchAnalytics()
 
     return () => {
       active = false
@@ -120,12 +74,21 @@ export default function Analytics() {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
         <h1 className="font-display text-2xl font-semibold text-ink">Health Analytics & Gemini AI Insights</h1>
         <p className="text-sm text-mist">
-          Quantitative metrics & predictive Gemini AI evaluation derived from your longitudinal medical records.
+          Quantitative health metrics, vital sign longitudinal trends, and predictive Gemini AI evaluation.
         </p>
       </motion.div>
+
+      {/* Error state notification */}
+      {error && (
+        <div className="flex items-center gap-2 rounded-xl border border-emergency/30 bg-emergency-soft/30 p-4 text-xs text-emergency">
+          <AlertCircle size={16} className="shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
 
       {/* AI Assistant Analytical Card */}
       <Card delay={0} className="p-6" glow="ai" hover={false}>
@@ -135,10 +98,10 @@ export default function Analytics() {
             <h2 className="text-sm font-semibold text-ink">Gemini AI Predictive Health Analysis</h2>
           </div>
           <span className="flex items-center gap-1 rounded-full bg-ai-soft px-2.5 py-0.5 text-[11px] font-medium text-ai">
-            <Sparkles size={11} /> Gemini 1.5 Flash
+            <Sparkles size={11} /> Gemini AI
           </span>
         </div>
-        <AIAssistantBubble message={aiInsightMessage || 'Generating Gemini AI predictive synthesis...'} />
+        <AIAssistantBubble message={aiInsightMessage || 'Generating Gemini AI predictive health synthesis...'} />
 
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3 pt-2 text-xs">
           <div className="flex items-center gap-2 rounded-xl bg-panel2 p-2.5 border border-edge">
@@ -171,26 +134,26 @@ export default function Analytics() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           icon={FileText}
-          label="Records Analyzed"
-          value={records.length}
-          trend="Total medical timeline entries"
+          label="Total Records Analyzed"
+          value={data?.totalRecordsCount ?? 0}
+          trend="Aggregated medical history"
           accent="vital"
           delay={0.05}
         />
         <StatCard
           icon={Pill}
-          label="Medication Count"
-          value={medications.length}
-          trend="Prescription history"
+          label="Active Medications"
+          value={data?.activeMedicationsCount ?? 0}
+          trend="Currently prescribed"
           accent="ai"
           delay={0.1}
         />
         <StatCard
-          icon={TrendingUp}
-          label="Data Coverage"
-          value={100}
-          suffix="%"
-          trend="Encrypted & synchronized"
+          icon={Heart}
+          label="Avg Systolic Pressure"
+          value={data?.avgSystolic ?? 120}
+          suffix=" mmHg"
+          trend={`Diastolic avg: ${data?.avgDiastolic ?? 80} mmHg`}
           accent="emergency"
           delay={0.15}
         />
@@ -202,59 +165,72 @@ export default function Analytics() {
           <Skeleton className="h-72 w-full rounded-2xl" />
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          {/* Monthly Records Trend */}
+        <>
+          {/* Blood Pressure & Vitals Trend Chart */}
           <Card delay={0.2} className="p-5" hover={false}>
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-ink">Records Added Over Time</p>
-                <p className="text-xs text-mist">Monthly volume of lab tests, visits, & uploads</p>
+                <p className="text-sm font-semibold text-ink">Blood Pressure Longitudinal Trend</p>
+                <p className="text-xs text-mist">Systolic and Diastolic pressure readings (mmHg)</p>
               </div>
               <Activity size={16} className="text-vital" />
             </div>
 
-            <ResponsiveContainer width="100%" height={240}>
-              <AreaChart data={monthlyTrends}>
-                <defs>
-                  <linearGradient id="recGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#22D3EE" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="#22D3EE" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="month" stroke="#7FA3D6" tickLine={false} axisLine={false} fontSize={11} />
-                <YAxis stroke="#7FA3D6" tickLine={false} axisLine={false} fontSize={11} allowDecimals={false} />
-                <Tooltip
-                  contentStyle={{
-                    background: '#0D2747',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: 12,
-                    fontSize: 12,
-                    color: '#EAF4FF',
-                  }}
-                />
-                <Area type="monotone" dataKey="recordsCount" stroke="#22D3EE" strokeWidth={2.5} fill="url(#recGrad)" name="Records" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </Card>
-
-          {/* Record Breakdown by Category */}
-          <Card delay={0.25} className="p-5" hover={false}>
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-semibold text-ink">Record Breakdown by Category</p>
-                <p className="text-xs text-mist">Distribution across consultations, labs, uploads</p>
-              </div>
-              <BarChart2 size={16} className="text-ai" />
-            </div>
-
-            {typeDistribution.length === 0 ? (
+            {(!data?.vitalsTrend || data.vitalsTrend.length === 0) ? (
               <div className="py-16 text-center text-xs text-mist">
-                No record data available to display distribution chart.
+                No recent blood pressure trend readings available.
               </div>
             ) : (
               <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={typeDistribution}>
-                  <XAxis dataKey="name" stroke="#7FA3D6" tickLine={false} axisLine={false} fontSize={11} />
+                <AreaChart data={data.vitalsTrend}>
+                  <defs>
+                    <linearGradient id="sysGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#22D3EE" stopOpacity={0.4} />
+                      <stop offset="100%" stopColor="#22D3EE" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="diaGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#818CF8" stopOpacity={0.4} />
+                      <stop offset="100%" stopColor="#818CF8" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="dateLabel" stroke="#7FA3D6" tickLine={false} axisLine={false} fontSize={11} />
+                  <YAxis stroke="#7FA3D6" tickLine={false} axisLine={false} fontSize={11} domain={[50, 160]} />
+                  <Tooltip
+                    contentStyle={{
+                      background: '#0D2747',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: 12,
+                      fontSize: 12,
+                      color: '#EAF4FF',
+                    }}
+                  />
+                  <Area type="monotone" dataKey="systolic" stroke="#22D3EE" strokeWidth={2} fill="url(#sysGrad)" name="Systolic (mmHg)" />
+                  <Area type="monotone" dataKey="diastolic" stroke="#818CF8" strokeWidth={2} fill="url(#diaGrad)" name="Diastolic (mmHg)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </Card>
+
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            {/* Monthly Records Trend */}
+            <Card delay={0.25} className="p-5" hover={false}>
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-ink">Healthcare Event Volume Over Time</p>
+                  <p className="text-xs text-mist">Monthly interactions (visits, labs, prescriptions)</p>
+                </div>
+                <TrendingUp size={16} className="text-vital" />
+              </div>
+
+              <ResponsiveContainer width="100%" height={220}>
+                <AreaChart data={data?.monthlyTrends || []}>
+                  <defs>
+                    <linearGradient id="recGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#22D3EE" stopOpacity={0.4} />
+                      <stop offset="100%" stopColor="#22D3EE" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="month" stroke="#7FA3D6" tickLine={false} axisLine={false} fontSize={11} />
                   <YAxis stroke="#7FA3D6" tickLine={false} axisLine={false} fontSize={11} allowDecimals={false} />
                   <Tooltip
                     contentStyle={{
@@ -265,12 +241,46 @@ export default function Analytics() {
                       color: '#EAF4FF',
                     }}
                   />
-                  <Bar dataKey="count" fill="#818CF8" radius={[6, 6, 0, 0]} name="Count" />
-                </BarChart>
+                  <Area type="monotone" dataKey="recordsCount" stroke="#22D3EE" strokeWidth={2.5} fill="url(#recGrad)" name="Events" />
+                </AreaChart>
               </ResponsiveContainer>
-            )}
-          </Card>
-        </div>
+            </Card>
+
+            {/* Record Breakdown by Category */}
+            <Card delay={0.3} className="p-5" hover={false}>
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-ink">Record Breakdown by Category</p>
+                  <p className="text-xs text-mist">Distribution across visits, labs, prescriptions, vaccines</p>
+                </div>
+                <BarChart2 size={16} className="text-ai" />
+              </div>
+
+              {(!data?.categoryDistribution || data.categoryDistribution.every((c) => c.count === 0)) ? (
+                <div className="py-16 text-center text-xs text-mist">
+                  No record data available to display distribution chart.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={data.categoryDistribution}>
+                    <XAxis dataKey="name" stroke="#7FA3D6" tickLine={false} axisLine={false} fontSize={11} />
+                    <YAxis stroke="#7FA3D6" tickLine={false} axisLine={false} fontSize={11} allowDecimals={false} />
+                    <Tooltip
+                      contentStyle={{
+                        background: '#0D2747',
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        borderRadius: 12,
+                        fontSize: 12,
+                        color: '#EAF4FF',
+                      }}
+                    />
+                    <Bar dataKey="count" fill="#818CF8" radius={[6, 6, 0, 0]} name="Count" />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </Card>
+          </div>
+        </>
       )}
     </div>
   )
