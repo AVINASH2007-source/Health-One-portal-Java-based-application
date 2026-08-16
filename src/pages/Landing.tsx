@@ -43,10 +43,10 @@ const steps = [
 ]
 
 const floatIcons = [
-  { icon: Building2, pos: 'left-6 top-8', accent: '#3B82F6' },
-  { icon: Stethoscope, pos: 'right-10 top-4', accent: '#2563EB' },
-  { icon: FlaskConical, pos: 'left-2 bottom-16', accent: '#22D3EE' },
-  { icon: Pill, pos: 'right-4 bottom-6', accent: '#60A5FA' },
+  { icon: Building2, pos: 'left-20 top-16', accent: '#3B82F6' },
+  { icon: Stethoscope, pos: 'right-20 top-16', accent: '#2563EB' },
+  { icon: FlaskConical, pos: 'left-0 bottom-0', accent: '#22D3EE' },
+  { icon: Pill, pos: 'right-0 bottom-0', accent: '#60A5FA' },
   { icon: FileText, pos: 'left-1/2 -top-4', accent: '#60A5FA' },
 ]
 

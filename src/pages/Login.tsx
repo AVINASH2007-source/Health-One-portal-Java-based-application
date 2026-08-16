@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Activity, FileText, Pill, Loader2, KeyRound, CheckCircle2, Mail } from 'lucide-react'
+import { ShieldCheck, Sparkles, ArrowRight, ArrowLeft, Activity, FileText, Pill, Loader2, KeyRound, CheckCircle2, Mail, Eye, EyeOff } from 'lucide-react'
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom'
 import VitalLine from '../components/ui/VitalLine'
 import GoogleIcon from '../components/ui/GoogleIcon'
@@ -10,9 +10,9 @@ import { Role } from '../lib/navConfig'
 import { supabase } from '../lib/supabase'
 
 const floatingStats = [
-  { icon: Activity, label: 'Records synced', value: '128', pos: 'left-4 top-10' },
+  { icon: Activity, label: 'Records synced', value: '128', pos: 'left-1/2 top-10' },
   { icon: Pill, label: 'Active meds tracked', value: '4', pos: 'right-2 top-40' },
-  { icon: FileText, label: 'Hospitals connected', value: '6', pos: 'left-10 bottom-16' },
+  { icon: FileText, label: 'Hospitals connected', value: '6', pos: 'left-0 bottom-0' },
 ]
 
 export default function Login() {
@@ -37,10 +37,10 @@ export default function Login() {
     modeParam === 'signup'
       ? 'signup'
       : modeParam === 'forgot-password'
-      ? 'forgot-password'
-      : modeParam === 'reset-password'
-      ? 'reset-password'
-      : 'signin'
+        ? 'forgot-password'
+        : modeParam === 'reset-password'
+          ? 'reset-password'
+          : 'signin'
 
   // If user is already authenticated, redirect directly to their role dashboard
   useEffect(() => {
@@ -63,6 +63,9 @@ export default function Login() {
   const [googleLoading, setGoogleLoading] = useState(false)
   const [checkEmailNotice, setCheckEmailNotice] = useState(false)
   const [resending, setResending] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [showNewPassword, setShowNewPassword] = useState(false)
 
   const setMode = (m: 'signin' | 'signup' | 'forgot-password' | 'reset-password') => {
     setFormError(null)
@@ -295,9 +298,8 @@ export default function Login() {
                 <button
                   key={m}
                   onClick={() => setMode(m)}
-                  className={`relative z-10 flex-1 rounded-lg py-2 font-medium transition-colors ${
-                    mode === m ? 'text-white' : 'text-mist hover:text-ink'
-                  }`}
+                  className={`relative z-10 flex-1 rounded-lg py-2 font-medium transition-colors ${mode === m ? 'text-white' : 'text-mist hover:text-ink'
+                    }`}
                 >
                   {mode === m && (
                     <motion.div
@@ -357,19 +359,19 @@ export default function Login() {
                 {mode === 'signin'
                   ? `Welcome back`
                   : mode === 'signup'
-                  ? `Join as a ${role.short.toLowerCase()}`
-                  : mode === 'forgot-password'
-                  ? `Reset your password`
-                  : `Enter new password`}
+                    ? `Join as a ${role.short.toLowerCase()}`
+                    : mode === 'forgot-password'
+                      ? `Reset your password`
+                      : `Enter new password`}
               </p>
               <p className="mt-1 text-sm text-mist">
                 {mode === 'signin'
                   ? `Continue to your ${role.short.toLowerCase()} dashboard.`
                   : mode === 'signup'
-                  ? `Set up your ${role.short.toLowerCase()} account on Health-One.`
-                  : mode === 'forgot-password'
-                  ? `We'll send a password recovery link to your email.`
-                  : `Type a new password for your account.`}
+                    ? `Set up your ${role.short.toLowerCase()} account on Health-One.`
+                    : mode === 'forgot-password'
+                      ? `We'll send a password recovery link to your email.`
+                      : `Type a new password for your account.`}
               </p>
 
               {/* Google OAuth Option (Signin/Signup) */}
@@ -424,13 +426,24 @@ export default function Login() {
                   )}
 
                   {(mode === 'signin' || mode === 'signup') && (
-                    <input
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Password"
-                      type="password"
-                      className="w-full rounded-xl border border-edge bg-panel2 px-4 py-3 text-sm text-ink placeholder:text-mist focus:outline-none focus:ring-2 focus:ring-vital/30"
-                    />
+                    <div className="relative">
+                      <input
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Password"
+                        type={showPassword ? 'text' : 'password'}
+                        className="w-full rounded-xl border border-edge bg-panel2 px-4 py-3 pr-11 text-sm text-ink placeholder:text-mist focus:outline-none focus:ring-2 focus:ring-vital/30"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((v) => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-mist hover:text-ink transition-colors"
+                        tabIndex={-1}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                      </button>
+                    </div>
                   )}
 
                   {mode === 'signup' && role.key === 'doctor' && (
@@ -457,23 +470,45 @@ export default function Login() {
                   )}
 
                   {mode === 'signup' && (
-                    <input
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Confirm password"
-                      type="password"
-                      className="w-full rounded-xl border border-edge bg-panel2 px-4 py-3 text-sm text-ink placeholder:text-mist focus:outline-none focus:ring-2 focus:ring-vital/30"
-                    />
+                    <div className="relative">
+                      <input
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="Confirm password"
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        className="w-full rounded-xl border border-edge bg-panel2 px-4 py-3 pr-11 text-sm text-ink placeholder:text-mist focus:outline-none focus:ring-2 focus:ring-vital/30"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword((v) => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-mist hover:text-ink transition-colors"
+                        tabIndex={-1}
+                        aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showConfirmPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                      </button>
+                    </div>
                   )}
 
                   {mode === 'reset-password' && (
-                    <input
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="New password (min 6 characters)"
-                      type="password"
-                      className="w-full rounded-xl border border-edge bg-panel2 px-4 py-3 text-sm text-ink placeholder:text-mist focus:outline-none focus:ring-2 focus:ring-vital/30"
-                    />
+                    <div className="relative">
+                      <input
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="New password (min 6 characters)"
+                        type={showNewPassword ? 'text' : 'password'}
+                        className="w-full rounded-xl border border-edge bg-panel2 px-4 py-3 pr-11 text-sm text-ink placeholder:text-mist focus:outline-none focus:ring-2 focus:ring-vital/30"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword((v) => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-mist hover:text-ink transition-colors"
+                        tabIndex={-1}
+                        aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showNewPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+                      </button>
+                    </div>
                   )}
                 </motion.div>
               </AnimatePresence>
@@ -529,10 +564,10 @@ export default function Login() {
                     {mode === 'signin'
                       ? 'Continue'
                       : mode === 'signup'
-                      ? 'Create account'
-                      : mode === 'forgot-password'
-                      ? 'Send Recovery Email'
-                      : 'Update Password'}{' '}
+                        ? 'Create account'
+                        : mode === 'forgot-password'
+                          ? 'Send Recovery Email'
+                          : 'Update Password'}{' '}
                     <ArrowRight size={16} />
                   </>
                 )}
