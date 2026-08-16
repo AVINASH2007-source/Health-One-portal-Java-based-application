@@ -106,31 +106,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (event === 'SIGNED_IN' && newSession?.user) {
         let loadedProfile = await loadProfile(newSession.user.id, newSession.user)
 
-        // Brand NEW user via Google OAuth (no profile row in DB yet)
-        if (!loadedProfile) {
-          const pendingRole = sessionStorage.getItem(PENDING_ROLE_KEY) as Role | null
-          const userMetaRole = newSession.user.user_metadata?.role as Role | undefined
-          const userMetaName =
-            newSession.user.user_metadata?.name ||
-            newSession.user.user_metadata?.full_name ||
-            newSession.user.email?.split('@')[0] ||
-            'User'
-          const assignRole = (userMetaRole || pendingRole || 'patient').toLowerCase() as Role
+        // Check for a pending role stored before the OAuth redirect.
+        // Uses localStorage (not sessionStorage) so it survives the cross-origin
+        // round-trip to Google and back.
+        const pendingRole = localStorage.getItem(PENDING_ROLE_KEY) as Role | null
 
-          const { error: insErr } = await supabase.from('profiles').insert({
-            id: newSession.user.id,
-            role: assignRole,
-            name: userMetaName,
-            email: newSession.user.email || '',
+        if (pendingRole) {
+          // Always clear immediately — whether the RPC succeeds or fails,
+          // we must never reuse this value on a subsequent unrelated login.
+          localStorage.removeItem(PENDING_ROLE_KEY)
+
+          // Call the SECURITY DEFINER RPC. It will:
+          //   - No-op (raise) if role_confirmed is already true (email/password user,
+          //     or a returning OAuth user whose role was already fixed).
+          //   - Atomically set the real role + flip role_confirmed = true for a fresh
+          //     OAuth user whose trigger created a placeholder 'patient' row.
+          const { error: rpcErr } = await supabase.rpc('confirm_pending_role', {
+            p_role: pendingRole,
           })
 
-          if (!insErr) {
-            loadedProfile = { role: assignRole, name: userMetaName, email: newSession.user.email || '' }
+          if (rpcErr) {
+            // "Role already confirmed" is expected for returning users — log but
+            // don't block. Any other error is worth a warning.
+            console.warn('confirm_pending_role notice:', rpcErr.message)
+          } else {
+            // RPC succeeded — reload the profile so the UI reflects the real role.
+            loadedProfile = await loadProfile(newSession.user.id, newSession.user)
           }
         }
-
-        // Clean up pending role stash without modifying existing DB profile role
-        sessionStorage.removeItem(PENDING_ROLE_KEY)
 
         if (active) {
           setProfile(loadedProfile)
@@ -289,12 +292,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = async (role: Role) => {
     setError(null)
-    sessionStorage.setItem(PENDING_ROLE_KEY, role.toLowerCase())
+    // localStorage survives the cross-origin OAuth redirect (sessionStorage does not).
+    localStorage.setItem(PENDING_ROLE_KEY, role.toLowerCase())
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: `${window.location.origin}/login/${role.toLowerCase()}` },
     })
-    if (error) setError(error.message)
+    if (error) {
+      localStorage.removeItem(PENDING_ROLE_KEY) // clean up if OAuth itself fails immediately
+      setError(error.message)
+    }
     return { error: error?.message ?? null }
   }
 

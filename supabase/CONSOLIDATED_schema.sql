@@ -26,15 +26,30 @@ create table if not exists public.profiles (
 
 alter table public.profiles enable row level security;
 
+-- Helper function: returns the current user's role without querying profiles
+-- through RLS (SECURITY DEFINER bypasses policies, preventing infinite recursion
+-- when this function is called from within a profiles policy).
+create or replace function public.get_my_role()
+returns public.user_role
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select role
+  from public.profiles
+  where id = (select auth.uid());
+$$;
+
+grant execute on function public.get_my_role() to authenticated;
+
 drop policy if exists "profiles: read own" on public.profiles;
 create policy "profiles: read own"
   on public.profiles for select
   using (
     auth.uid() = id
-    or role = 'doctor'
-    or exists (
-      select 1 from public.profiles where profiles.id = auth.uid() and profiles.role = 'hospital'
-    )
+    or public.get_my_role() = 'doctor'
+    or public.get_my_role() = 'hospital'
   );
 
 drop policy if exists "profiles: update own" on public.profiles;
