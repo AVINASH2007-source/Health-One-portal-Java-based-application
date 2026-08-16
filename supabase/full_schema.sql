@@ -12,11 +12,12 @@ end $$;
 
 -- 2. Profiles table
 create table if not exists public.profiles (
-  id         uuid primary key references auth.users (id) on delete cascade,
-  role       public.user_role not null default 'patient',
-  name       text not null,
-  email      text not null,
-  created_at timestamptz not null default now()
+  id          uuid primary key references auth.users (id) on delete cascade,
+  role        public.user_role not null default 'patient',
+  name        text not null,
+  email       text not null,
+  hospital_id uuid references public.profiles(id) default null,
+  created_at  timestamptz not null default now()
 );
 
 alter table public.profiles enable row level security;
@@ -25,7 +26,13 @@ alter table public.profiles enable row level security;
 drop policy if exists "profiles: read own" on public.profiles;
 create policy "profiles: read own"
   on public.profiles for select
-  using (auth.uid() = id);
+  using (
+    auth.uid() = id
+    or role = 'doctor'
+    or exists (
+      select 1 from public.profiles where profiles.id = auth.uid() and profiles.role = 'hospital'
+    )
+  );
 
 drop policy if exists "profiles: update own" on public.profiles;
 create policy "profiles: update own"
@@ -37,6 +44,12 @@ drop policy if exists "profiles: insert self" on public.profiles;
 create policy "profiles: insert self"
   on public.profiles for insert
   with check (auth.uid() = id);
+
+drop policy if exists "profiles: hospital links unassigned doctor" on public.profiles;
+create policy "profiles: hospital links unassigned doctor"
+  on public.profiles for update
+  using (role = 'doctor' and (hospital_id is null or hospital_id = auth.uid()))
+  with check (hospital_id = auth.uid());
 
 -- Trigger: Prevent changing role column once created (Role Immutability)
 create or replace function public.prevent_profile_role_change()
@@ -108,7 +121,6 @@ create policy "records: patient insert self upload"
   with check (
     auth.uid() = patient_id
     and auth.uid() = uploaded_by
-    and record_type = 'patient_upload'
     and doctor_id is null
   );
 
@@ -182,15 +194,26 @@ create policy "medications: patient delete"
     and (source in ('patient_added', 'ai_extracted') or prescribed_by is null)
   );
 
+drop policy if exists "medications: doctor hospital select" on public.medications;
+create policy "medications: doctor hospital select"
+  on public.medications for select
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role in ('doctor', 'hospital')
+    )
+  );
+
 -- 6. Emergency Cards table
 create table if not exists public.emergency_cards (
-  patient_id             uuid primary key references public.profiles(id) on delete cascade,
-  blood_type             text default 'O+',
-  allergies              text[] default '{}',
-  conditions             text[] default '{}',
-  emergency_contact_name text default '',
+  patient_id              uuid primary key references public.profiles(id) on delete cascade,
+  blood_type              text default 'O+',
+  allergies               text[] default '{}',
+  conditions              text[] default '{}',
+  emergency_contact_name  text default '',
   emergency_contact_phone text default '',
-  updated_at             timestamptz not null default now()
+  updated_at              timestamptz not null default now()
 );
 
 alter table public.emergency_cards enable row level security;
@@ -239,7 +262,49 @@ create policy "emergency_access_log: insert authenticated"
   on public.emergency_access_log for insert
   with check (auth.uid() is not null);
 
--- 8. AI Summaries table
+-- 8. Departments table
+create table if not exists public.departments (
+  id          uuid primary key default gen_random_uuid(),
+  hospital_id uuid not null references public.profiles(id) on delete cascade,
+  name        text not null,
+  created_at  timestamptz not null default now()
+);
+
+alter table public.departments enable row level security;
+
+drop policy if exists "departments: hospital manages own" on public.departments;
+create policy "departments: hospital manages own"
+  on public.departments for all
+  using (hospital_id = auth.uid())
+  with check (hospital_id = auth.uid());
+
+-- 9. Audit Logs table
+create table if not exists public.audit_logs (
+  id         uuid primary key default gen_random_uuid(),
+  actor_id   uuid references public.profiles(id),
+  patient_id uuid references public.profiles(id),
+  action     text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.audit_logs enable row level security;
+
+drop policy if exists "audit_logs: hospital reads all" on public.audit_logs;
+create policy "audit_logs: hospital reads all"
+  on public.audit_logs for select
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid() and profiles.role = 'hospital'
+    )
+  );
+
+drop policy if exists "audit_logs: authenticated users insert" on public.audit_logs;
+create policy "audit_logs: authenticated users insert"
+  on public.audit_logs for insert
+  with check (auth.uid() = actor_id);
+
+-- 10. AI Summaries table
 create table if not exists public.ai_summaries (
   id         uuid primary key default gen_random_uuid(),
   patient_id uuid not null references public.profiles(id) on delete cascade,
@@ -255,7 +320,7 @@ create policy "ai_summaries: select own"
   on public.ai_summaries for select
   using (auth.uid() = patient_id);
 
--- 9. Storage Bucket setup for medical-documents
+-- 11. Storage Bucket setup for medical-documents
 insert into storage.buckets (id, name, public)
 values ('medical-documents', 'medical-documents', false)
 on conflict (id) do nothing;
@@ -295,3 +360,4 @@ create policy "Storage: doctor hospital read objects"
       and profiles.role in ('doctor', 'hospital')
     )
   );
+

@@ -22,6 +22,9 @@ import PatientAppointments from './pages/patient/Appointments'
 import DoctorHome from './pages/doctor/DoctorHome'
 import DoctorAISummary from './pages/doctor/AISummary'
 import HospitalHome from './pages/hospital/HospitalHome'
+import DoctorManagement from './pages/hospital/DoctorManagement'
+import Departments from './pages/hospital/Departments'
+import AuditLogs from './pages/hospital/AuditLogs'
 
 const overrides: Partial<Record<string, JSX.Element>> = {
   '/patient': <PatientOverview />,
@@ -34,6 +37,9 @@ const overrides: Partial<Record<string, JSX.Element>> = {
   '/doctor': <DoctorHome />,
   '/doctor/ai-summary': <DoctorAISummary />,
   '/hospital': <HospitalHome />,
+  '/hospital/doctors': <DoctorManagement />,
+  '/hospital/departments': <Departments />,
+  '/hospital/audit-logs': <AuditLogs />,
 }
 
 function roleRoutes(role: Role) {
