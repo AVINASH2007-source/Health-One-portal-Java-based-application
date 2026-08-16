@@ -94,154 +94,117 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
--- 4. Records table
-create table if not exists public.records (
-  id              uuid primary key default gen_random_uuid(),
-  patient_id      uuid not null references public.profiles(id) on delete cascade,
-  doctor_id       uuid default null references public.profiles(id) on delete set null,
-  uploaded_by     uuid default null references public.profiles(id) on delete set null,
-  record_type     text not null,
-  title           text not null,
-  description     text default null,
-  attachment_path text default null,
-  occurred_at     timestamptz not null default now(),
-  created_at      timestamptz not null default now()
+-- 4. Doctors table
+create table if not exists public.doctors (
+  id                   uuid primary key references public.profiles(id) on delete cascade,
+  medical_license_id   text unique not null,
+  specialty            text not null,
+  hospital_affiliation text default null,
+  created_at           timestamptz not null default now()
 );
 
-alter table public.records enable row level security;
+alter table public.doctors enable row level security;
 
-drop policy if exists "records: select own" on public.records;
-create policy "records: select own"
-  on public.records for select
-  using (auth.uid() = patient_id);
+drop policy if exists "doctors: public read authenticated" on public.doctors;
+create policy "doctors: public read authenticated"
+  on public.doctors for select
+  using (auth.role() = 'authenticated');
 
-drop policy if exists "records: patient insert self upload" on public.records;
-create policy "records: patient insert self upload"
-  on public.records for insert
-  with check (
-    auth.uid() = patient_id
-    and auth.uid() = uploaded_by
-    and doctor_id is null
-  );
+drop policy if exists "doctors: insert self" on public.doctors;
+create policy "doctors: insert self"
+  on public.doctors for insert
+  with check (auth.uid() = id);
 
-drop policy if exists "records: patient delete self upload" on public.records;
-create policy "records: patient delete self upload"
-  on public.records for delete
-  using (
-    auth.uid() = patient_id
-    and auth.uid() = uploaded_by
-  );
+drop policy if exists "doctors: update self" on public.doctors;
+create policy "doctors: update self"
+  on public.doctors for update
+  using (auth.uid() = id)
+  with check (auth.uid() = id);
 
-drop policy if exists "records: doctor hospital select" on public.records;
-create policy "records: doctor hospital select"
-  on public.records for select
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role in ('doctor', 'hospital')
-    )
-  );
-
--- 5. Medications table
-create table if not exists public.medications (
-  id            uuid primary key default gen_random_uuid(),
-  patient_id    uuid not null references public.profiles(id) on delete cascade,
-  prescribed_by uuid default null references public.profiles(id) on delete set null,
-  name          text not null,
-  dosage        text not null,
-  frequency     text not null,
-  duration      text default null,
-  source        text default 'patient_added',
-  status        text default 'confirmed',
-  start_date    date not null default current_date,
-  end_date      date default null,
-  notes         text default null,
-  created_at    timestamptz not null default now()
+-- 5. Appointments table
+create table if not exists public.appointments (
+  id         uuid primary key default gen_random_uuid(),
+  doctor_id  uuid not null references public.profiles(id) on delete cascade,
+  patient_id uuid not null references public.profiles(id) on delete cascade,
+  time       timestamptz not null,
+  reason     text not null,
+  status     text not null default 'pending' check (status in ('pending', 'scheduled', 'completed', 'cancelled', 'rejected')),
+  created_at timestamptz not null default now()
 );
 
-alter table public.medications enable row level security;
+alter table public.appointments enable row level security;
 
-drop policy if exists "medications: select own" on public.medications;
-create policy "medications: select own"
-  on public.medications for select
+drop policy if exists "appointments: patient select" on public.appointments;
+create policy "appointments: patient select"
+  on public.appointments for select
   using (auth.uid() = patient_id);
 
-drop policy if exists "medications: patient insert" on public.medications;
-create policy "medications: patient insert"
-  on public.medications for insert
-  with check (
-    auth.uid() = patient_id
-    and source in ('patient_added', 'ai_extracted')
-  );
+drop policy if exists "appointments: doctor select" on public.appointments;
+create policy "appointments: doctor select"
+  on public.appointments for select
+  using (auth.uid() = doctor_id);
 
-drop policy if exists "medications: patient update" on public.medications;
-create policy "medications: patient update"
-  on public.medications for update
+drop policy if exists "appointments: patient insert" on public.appointments;
+create policy "appointments: patient insert"
+  on public.appointments for insert
+  with check (auth.uid() = patient_id);
+
+drop policy if exists "appointments: doctor insert" on public.appointments;
+create policy "appointments: doctor insert"
+  on public.appointments for insert
+  with check (auth.uid() = doctor_id);
+
+drop policy if exists "appointments: doctor update" on public.appointments;
+create policy "appointments: doctor update"
+  on public.appointments for update
+  using (auth.uid() = doctor_id)
+  with check (auth.uid() = doctor_id);
+
+drop policy if exists "appointments: patient update" on public.appointments;
+create policy "appointments: patient update"
+  on public.appointments for update
   using (
     auth.uid() = patient_id
-    and (source in ('patient_added', 'ai_extracted') or prescribed_by is null)
+    and status = 'pending'
   )
   with check (
     auth.uid() = patient_id
   );
 
-drop policy if exists "medications: patient delete" on public.medications;
-create policy "medications: patient delete"
-  on public.medications for delete
-  using (
-    auth.uid() = patient_id
-    and (source in ('patient_added', 'ai_extracted') or prescribed_by is null)
-  );
-
-drop policy if exists "medications: doctor hospital select" on public.medications;
-create policy "medications: doctor hospital select"
-  on public.medications for select
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role in ('doctor', 'hospital')
-    )
-  );
-
--- 6. Emergency Cards table
-create table if not exists public.emergency_cards (
-  patient_id              uuid primary key references public.profiles(id) on delete cascade,
-  blood_type              text default 'O+',
-  allergies               text[] default '{}',
-  conditions              text[] default '{}',
-  emergency_contact_name  text default '',
-  emergency_contact_phone text default '',
-  updated_at              timestamptz not null default now()
+-- 6. Access Grants table (patient access delegation)
+create table if not exists public.access_grants (
+  id         uuid primary key default gen_random_uuid(),
+  patient_id uuid not null references public.profiles(id) on delete cascade,
+  doctor_id  uuid not null references public.profiles(id) on delete cascade,
+  scope      text not null default 'full', -- 'full', 'timeline', 'medications'
+  granted_at timestamptz not null default now(),
+  expires_at timestamptz default null,
+  constraint unique_patient_doctor_grant unique (patient_id, doctor_id)
 );
 
-alter table public.emergency_cards enable row level security;
+alter table public.access_grants enable row level security;
 
-drop policy if exists "emergency_cards: select patient or provider" on public.emergency_cards;
-create policy "emergency_cards: select patient or provider"
-  on public.emergency_cards for select
-  using (
-    auth.uid() = patient_id
-    or exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid()
-      and profiles.role in ('doctor', 'hospital')
-    )
-  );
+drop policy if exists "access_grants: patient select" on public.access_grants;
+create policy "access_grants: patient select"
+  on public.access_grants for select
+  using (auth.uid() = patient_id);
 
-drop policy if exists "emergency_cards: patient upsert" on public.emergency_cards;
-create policy "emergency_cards: patient upsert"
-  on public.emergency_cards for insert
+drop policy if exists "access_grants: doctor select" on public.access_grants;
+create policy "access_grants: doctor select"
+  on public.access_grants for select
+  using (auth.uid() = doctor_id);
+
+drop policy if exists "access_grants: patient insert" on public.access_grants;
+create policy "access_grants: patient insert"
+  on public.access_grants for insert
   with check (auth.uid() = patient_id);
 
-drop policy if exists "emergency_cards: patient update" on public.emergency_cards;
-create policy "emergency_cards: patient update"
-  on public.emergency_cards for update
-  using (auth.uid() = patient_id)
-  with check (auth.uid() = patient_id);
+drop policy if exists "access_grants: patient delete" on public.access_grants;
+create policy "access_grants: patient delete"
+  on public.access_grants for delete
+  using (auth.uid() = patient_id);
 
--- 7. Emergency Access Log table
+-- 7. Emergency Access Log Table
 create table if not exists public.emergency_access_log (
   id            uuid primary key default gen_random_uuid(),
   patient_id    uuid not null references public.profiles(id) on delete cascade,
@@ -252,10 +215,18 @@ create table if not exists public.emergency_access_log (
 
 alter table public.emergency_access_log enable row level security;
 
-drop policy if exists "emergency_access_log: select own" on public.emergency_access_log;
-create policy "emergency_access_log: select own"
+drop policy if exists "emergency_access_log: select own or doctor" on public.emergency_access_log;
+create policy "emergency_access_log: select own or doctor"
   on public.emergency_access_log for select
-  using (auth.uid() = patient_id or auth.uid() = accessed_by);
+  using (
+    auth.uid() = patient_id
+    or auth.uid() = accessed_by
+    or exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role in ('doctor', 'hospital')
+    )
+  );
 
 drop policy if exists "emergency_access_log: insert authenticated" on public.emergency_access_log;
 create policy "emergency_access_log: insert authenticated"
@@ -304,7 +275,185 @@ create policy "audit_logs: authenticated users insert"
   on public.audit_logs for insert
   with check (auth.uid() = actor_id);
 
--- 10. AI Summaries table
+-- 10. Records table
+create table if not exists public.records (
+  id              uuid primary key default gen_random_uuid(),
+  patient_id      uuid not null references public.profiles(id) on delete cascade,
+  doctor_id       uuid default null references public.profiles(id) on delete set null,
+  uploaded_by     uuid default null references public.profiles(id) on delete set null,
+  record_type     text not null,
+  title           text not null,
+  description     text default null,
+  attachment_path text default null,
+  occurred_at     timestamptz not null default now(),
+  created_at      timestamptz not null default now()
+);
+
+alter table public.records enable row level security;
+
+drop policy if exists "records: rbac select" on public.records;
+create policy "records: rbac select"
+  on public.records for select
+  using (
+    auth.uid() = patient_id
+    or auth.uid() = doctor_id
+    or auth.uid() = uploaded_by
+    or exists (
+      select 1 from public.access_grants ag
+      where ag.patient_id = records.patient_id
+      and ag.doctor_id = auth.uid()
+      and (ag.expires_at is null or ag.expires_at > now())
+    )
+    or exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'hospital'
+    )
+  );
+
+drop policy if exists "records: patient insert self upload" on public.records;
+create policy "records: patient insert self upload"
+  on public.records for insert
+  with check (
+    auth.uid() = patient_id
+    and auth.uid() = uploaded_by
+    and doctor_id is null
+  );
+
+drop policy if exists "records: doctor insert" on public.records;
+create policy "records: doctor insert"
+  on public.records for insert
+  with check (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'doctor'
+    )
+    and (doctor_id = auth.uid() or uploaded_by = auth.uid())
+  );
+
+drop policy if exists "records: patient delete self upload" on public.records;
+create policy "records: patient delete self upload"
+  on public.records for delete
+  using (
+    auth.uid() = patient_id
+    and auth.uid() = uploaded_by
+  );
+
+-- 11. Medications table
+create table if not exists public.medications (
+  id            uuid primary key default gen_random_uuid(),
+  patient_id    uuid not null references public.profiles(id) on delete cascade,
+  prescribed_by uuid default null references public.profiles(id) on delete set null,
+  name          text not null,
+  dosage        text not null,
+  frequency     text not null,
+  duration      text default null,
+  source        text default 'patient_added',
+  status        text default 'confirmed',
+  start_date    date not null default current_date,
+  end_date      date default null,
+  notes         text default null,
+  created_at    timestamptz not null default now()
+);
+
+alter table public.medications enable row level security;
+
+drop policy if exists "medications: rbac select" on public.medications;
+create policy "medications: rbac select"
+  on public.medications for select
+  using (
+    auth.uid() = patient_id
+    or auth.uid() = prescribed_by
+    or exists (
+      select 1 from public.access_grants ag
+      where ag.patient_id = medications.patient_id
+      and ag.doctor_id = auth.uid()
+      and (ag.expires_at is null or ag.expires_at > now())
+    )
+    or exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'hospital'
+    )
+  );
+
+drop policy if exists "medications: patient insert" on public.medications;
+create policy "medications: patient insert"
+  on public.medications for insert
+  with check (
+    auth.uid() = patient_id
+    and source in ('patient_added', 'ai_extracted')
+  );
+
+drop policy if exists "medications: doctor insert" on public.medications;
+create policy "medications: doctor insert"
+  on public.medications for insert
+  with check (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role = 'doctor'
+    )
+    and prescribed_by = auth.uid()
+  );
+
+drop policy if exists "medications: patient update" on public.medications;
+create policy "medications: patient update"
+  on public.medications for update
+  using (
+    auth.uid() = patient_id
+    and (source in ('patient_added', 'ai_extracted') or prescribed_by is null)
+  )
+  with check (
+    auth.uid() = patient_id
+  );
+
+drop policy if exists "medications: patient delete" on public.medications;
+create policy "medications: patient delete"
+  on public.medications for delete
+  using (
+    auth.uid() = patient_id
+    and (source in ('patient_added', 'ai_extracted') or prescribed_by is null)
+  );
+
+-- 12. Emergency Cards table
+create table if not exists public.emergency_cards (
+  patient_id              uuid primary key references public.profiles(id) on delete cascade,
+  blood_type              text default 'O+',
+  allergies               text[] default '{}',
+  conditions              text[] default '{}',
+  emergency_contact_name  text default '',
+  emergency_contact_phone text default '',
+  updated_at              timestamptz not null default now()
+);
+
+alter table public.emergency_cards enable row level security;
+
+drop policy if exists "emergency_cards: select patient or provider" on public.emergency_cards;
+create policy "emergency_cards: select patient or provider"
+  on public.emergency_cards for select
+  using (
+    auth.uid() = patient_id
+    or exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid()
+      and profiles.role in ('doctor', 'hospital')
+    )
+  );
+
+drop policy if exists "emergency_cards: patient upsert" on public.emergency_cards;
+create policy "emergency_cards: patient upsert"
+  on public.emergency_cards for insert
+  with check (auth.uid() = patient_id);
+
+drop policy if exists "emergency_cards: patient update" on public.emergency_cards;
+create policy "emergency_cards: patient update"
+  on public.emergency_cards for update
+  using (auth.uid() = patient_id)
+  with check (auth.uid() = patient_id);
+
+-- 13. AI Summaries table
 create table if not exists public.ai_summaries (
   id         uuid primary key default gen_random_uuid(),
   patient_id uuid not null references public.profiles(id) on delete cascade,
@@ -315,12 +464,20 @@ create table if not exists public.ai_summaries (
 
 alter table public.ai_summaries enable row level security;
 
-drop policy if exists "ai_summaries: select own" on public.ai_summaries;
-create policy "ai_summaries: select own"
+drop policy if exists "ai_summaries: select own or doctor" on public.ai_summaries;
+create policy "ai_summaries: select own or doctor"
   on public.ai_summaries for select
-  using (auth.uid() = patient_id);
+  using (
+    auth.uid() = patient_id
+    or auth.uid() = doctor_id
+    or exists (
+      select 1 from public.access_grants ag
+      where ag.patient_id = ai_summaries.patient_id
+      and ag.doctor_id = auth.uid()
+    )
+  );
 
--- 11. Storage Bucket setup for medical-documents
+-- 14. Storage Bucket setup for medical-documents
 insert into storage.buckets (id, name, public)
 values ('medical-documents', 'medical-documents', false)
 on conflict (id) do nothing;
@@ -361,3 +518,69 @@ create policy "Storage: doctor hospital read objects"
     )
   );
 
+-- 15. Unified Hospital Audit View (cross-cutting audit log for Member 3)
+create or replace view public.hospital_audit_view as
+  -- Emergency Access Overrides
+  select
+    eal.id as log_id,
+    'emergency_access' as event_type,
+    eal.accessed_by as actor_id,
+    doc_prof.name as actor_name,
+    eal.patient_id,
+    pat_prof.name as patient_name,
+    eal.access_reason as details,
+    eal.created_at
+  from public.emergency_access_log eal
+  left join public.profiles doc_prof on doc_prof.id = eal.accessed_by
+  left join public.profiles pat_prof on pat_prof.id = eal.patient_id
+
+  union all
+
+  -- Clinical Visit Entries & Uploads
+  select
+    r.id as log_id,
+    'clinical_record_created' as event_type,
+    coalesce(r.doctor_id, r.uploaded_by) as actor_id,
+    doc_prof.name as actor_name,
+    r.patient_id,
+    pat_prof.name as patient_name,
+    r.title || ' (' || r.record_type || ')' as details,
+    r.created_at
+  from public.records r
+  left join public.profiles doc_prof on doc_prof.id = coalesce(r.doctor_id, r.uploaded_by)
+  left join public.profiles pat_prof on pat_prof.id = r.patient_id
+  where r.doctor_id is not null or r.uploaded_by is not null
+
+  union all
+
+  -- Prescriptions Prescribed
+  select
+    m.id as log_id,
+    'prescription_issued' as event_type,
+    m.prescribed_by as actor_id,
+    doc_prof.name as actor_name,
+    m.patient_id,
+    pat_prof.name as patient_name,
+    'Prescribed ' || m.name || ' ' || m.dosage as details,
+    m.created_at
+  from public.medications m
+  left join public.profiles doc_prof on doc_prof.id = m.prescribed_by
+  left join public.profiles pat_prof on pat_prof.id = m.patient_id
+  where m.prescribed_by is not null
+
+  union all
+
+  -- AI Summary Generation
+  select
+    s.id as log_id,
+    'ai_summary_generated' as event_type,
+    s.doctor_id as actor_id,
+    doc_prof.name as actor_name,
+    s.patient_id,
+    pat_prof.name as patient_name,
+    'Generated AI summary' as details,
+    s.created_at
+  from public.ai_summaries s
+  left join public.profiles doc_prof on doc_prof.id = s.doctor_id
+  left join public.profiles pat_prof on pat_prof.id = s.patient_id
+  where s.doctor_id is not null;

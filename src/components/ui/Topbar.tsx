@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Bell,
@@ -6,316 +6,346 @@ import {
   ShieldAlert,
   LogOut,
   Menu,
-  User,
-  Mail,
-  CheckCircle2,
-  Clock,
-  ExternalLink,
-  Droplet,
-  Calendar,
-  ShieldCheck,
-  Check,
-  ChevronDown,
   X,
+  Calendar,
+  AlertTriangle,
+  ShieldCheck,
+  ChevronRight,
+  Mail,
+  Key,
+  CheckCircle2,
   FileText,
-  Pill,
-  Activity,
-  LineChart,
+  Clock,
+  Check,
 } from 'lucide-react'
 import { Role } from '../../lib/navConfig'
 import { getRoleTheme } from '../../lib/roleTheme'
 import { useAuth } from '../../lib/AuthContext'
 import { useNavigate } from 'react-router-dom'
+import { supabase } from '../../lib/supabase'
 
-interface NotificationItem {
+type NotificationItem = {
   id: string
   title: string
-  message: string
+  description: string
   time: string
-  type: 'appointment' | 'ocr' | 'emergency' | 'medication'
-  read: boolean
+  type: 'appointment' | 'emergency' | 'ocr' | 'system'
   link?: string
 }
 
-interface SearchResultItem {
-  id: string
-  title: string
-  subtitle: string
-  category: 'records' | 'medications' | 'appointments' | 'timeline' | 'analytics' | 'emergency'
-  path: string
-  icon: any
-}
-
-const SEARCH_DATABASE: SearchResultItem[] = [
-  {
-    id: 's1',
-    title: 'Metformin 500 mg',
-    subtitle: 'Active Prescription · Twice Daily with meals',
-    category: 'medications',
-    path: '/patient/medications',
-    icon: Pill,
-  },
-  {
-    id: 's2',
-    title: 'Telmisartan 40 mg',
-    subtitle: 'Active Medication · Once Daily Morning',
-    category: 'medications',
-    path: '/patient/medications',
-    icon: Pill,
-  },
-  {
-    id: 's3',
-    title: 'Cardiology Consultation & ECG Review',
-    subtitle: 'Doctor Visit · Dr. R. Kumar (Apollo Hospitals)',
-    category: 'timeline',
-    path: '/patient/timeline',
-    icon: Activity,
-  },
-  {
-    id: 's4',
-    title: 'Complete Blood Count (CBC) Lab Report',
-    subtitle: 'Uploaded Document · Tesseract OCR Parsed',
-    category: 'records',
-    path: '/patient/records',
-    icon: FileText,
-  },
-  {
-    id: 's5',
-    title: 'Appointment Request — Dr. R. Kumar',
-    subtitle: 'Confirmed Visit · Aug 18 at 10:30 AM',
-    category: 'appointments',
-    path: '/patient/appointments',
-    icon: Calendar,
-  },
-  {
-    id: 's6',
-    title: 'Emergency Medical Card (PULSEX-AVS-001)',
-    subtitle: 'Blood Group O+ · Severe Penicillin Allergy',
-    category: 'emergency',
-    path: '/patient/emergency-card',
-    icon: ShieldAlert,
-  },
-  {
-    id: 's7',
-    title: 'Blood Pressure & Heart Rate Trends',
-    subtitle: 'Health Analytics · 128/82 mmHg Average',
-    category: 'analytics',
-    path: '/patient/analytics',
-    icon: LineChart,
-  },
-  {
-    id: 's8',
-    title: 'Appendectomy Surgical Record',
-    subtitle: 'Surgical History · Dr. S. Ramesh',
-    category: 'records',
-    path: '/patient/records',
-    icon: FileText,
-  },
-]
-
-const INITIAL_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: 'n1',
-    title: 'Appointment Request Confirmed',
-    message: 'Dr. R. Kumar confirmed your Cardiology consultation for Aug 18 at 10:30 AM.',
-    time: '2 min ago',
-    type: 'appointment',
-    read: false,
-    link: '/patient/appointments',
-  },
-  {
-    id: 'n2',
-    title: 'Tesseract OCR Document Parsed',
-    message: 'Extracted Blood Pressure (128/82 mmHg), Pulse (78 bpm), and 2 prescriptions from uploaded file.',
-    time: '18 min ago',
-    type: 'ocr',
-    read: false,
-    link: '/patient/records',
-  },
-  {
-    id: 'n3',
-    title: 'Emergency Access Audit',
-    message: 'Emergency Card access was logged by ER Paramedic dispatch.',
-    time: '1 hr ago',
-    type: 'emergency',
-    read: false,
-    link: '/patient/emergency-card',
-  },
-  {
-    id: 'n4',
-    title: 'Medication Schedule Reminder',
-    message: 'Metformin 500 mg dose scheduled for 08:00 PM tonight.',
-    time: '3 hrs ago',
-    type: 'medication',
-    read: true,
-    link: '/patient/medications',
-  },
-]
-
 export default function Topbar({
   role,
-  onOpenMobileMenu,
+  onMenuToggle,
 }: {
   role: Role
-  onOpenMobileMenu?: () => void
+  onMenuToggle?: () => void
 }) {
   const navigate = useNavigate()
-  const { session, name, logout } = useAuth()
+  const { user, profile, name, logout } = useAuth()
   const theme = getRoleTheme(role)
 
-  // Search State
-  const [searchQuery, setSearchQuery] = useState('')
-  const [isSearchOpen, setIsSearchOpen] = useState(false)
-
-  // Popover States
   const [showNotifications, setShowNotifications] = useState(false)
-  const [showProfileMenu, setShowProfileMenu] = useState(false)
-  const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS)
+  const [showProfile, setShowProfile] = useState(false)
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
 
   const notifRef = useRef<HTMLDivElement>(null)
   const profileRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLDivElement>(null)
 
-  const unreadCount = notifications.filter((n) => !n.read).length
-
-  // Filter search results dynamically based on input query
-  const searchResults = searchQuery.trim()
-    ? SEARCH_DATABASE.filter(
-        (item) =>
-          item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          item.subtitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          item.category.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : []
-
-  // Close dropdowns when clicking outside
+  // Fetch real notifications from Supabase
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+    let active = true
+
+    const fetchNotifications = async () => {
+      if (!user?.id) return
+
+      try {
+        const notifList: NotificationItem[] = []
+
+        if (role === 'doctor') {
+          // 1. Doctor: Check pending appointment requests
+          const { data: appts } = await supabase
+            .from('appointments')
+            .select('id, time, reason, created_at, profiles:patient_id (name)')
+            .eq('doctor_id', user.id)
+            .eq('status', 'pending')
+
+          if (appts && appts.length > 0) {
+            appts.forEach((a: any) => {
+              notifList.push({
+                id: a.id,
+                title: `New Appointment Request`,
+                description: `${a.profiles?.name || 'Patient'} requested: "${a.reason}"`,
+                time: new Date(a.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                type: 'appointment',
+                link: '/doctor/appointments',
+              })
+            })
+          }
+
+          // 2. Doctor: Check emergency access logs
+          const { data: emLogs } = await supabase
+            .from('emergency_access_log')
+            .select('id, access_reason, created_at, profiles:patient_id (name)')
+            .order('created_at', { ascending: false })
+            .limit(3)
+
+          if (emLogs && emLogs.length > 0) {
+            emLogs.forEach((l: any) => {
+              notifList.push({
+                id: l.id,
+                title: `Emergency Access Logged`,
+                description: `Reason: ${l.access_reason} (${l.profiles?.name || 'Patient'})`,
+                time: new Date(l.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                type: 'emergency',
+                link: '/doctor/emergency-log',
+              })
+            })
+          }
+        } else if (role === 'patient') {
+          // Patient default notifications
+          notifList.push(
+            {
+              id: 'n1',
+              title: 'Appointment Request Confirmed',
+              description: 'Dr. R. Kumar confirmed your Cardiology consultation.',
+              time: '2 min ago',
+              type: 'appointment',
+              link: '/patient/appointments',
+            },
+            {
+              id: 'n2',
+              title: 'Tesseract OCR Document Parsed',
+              description: 'Extracted Blood Pressure (128/82 mmHg), Pulse (78 bpm).',
+              time: '18 min ago',
+              type: 'ocr',
+              link: '/patient/records',
+            },
+            {
+              id: 'n3',
+              title: 'Emergency Access Audit',
+              description: 'Emergency Card access was logged by ER Paramedic dispatch.',
+              time: '1 hr ago',
+              type: 'emergency',
+              link: '/patient/emergency-card',
+            }
+          )
+        }
+
+        if (active) {
+          setNotifications(notifList)
+          setUnreadCount(notifList.length)
+        }
+      } catch (err) {
+        console.error('Error fetching notifications:', err)
+      }
+    }
+
+    fetchNotifications()
+    return () => { active = false }
+  }, [user?.id, role])
+
+  // Global Search State
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<{
+    patients: { id: string; name: string; email: string }[]
+    records: { id: string; title: string; patient_id: string; record_type: string }[]
+  }>({ patients: [], records: [] })
+  const [searching, setSearching] = useState(false)
+
+  // Real-time Global Search Effect
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults({ patients: [], records: [] })
+      setSearching(false)
+      return
+    }
+
+    let active = true
+    const doSearch = async () => {
+      setSearching(true)
+      try {
+        const query = searchQuery.trim()
+
+        const [{ data: pData }, { data: rData }] = await Promise.all([
+          supabase
+            .from('profiles')
+            .select('id, name, email')
+            .eq('role', 'patient')
+            .or(`name.ilike.%${query}%,email.ilike.%${query}%`)
+            .limit(5),
+          supabase
+            .from('records')
+            .select('id, title, patient_id, record_type')
+            .ilike('title', `%${query}%`)
+            .limit(5),
+        ])
+
+        if (active) {
+          setSearchResults({
+            patients: pData || [],
+            records: rData || [],
+          })
+        }
+      } catch (err) {
+        console.error('Global search error:', err)
+      } finally {
+        if (active) setSearching(false)
+      }
+    }
+
+    const timer = setTimeout(doSearch, 250)
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [searchQuery])
+
+  // Close popovers on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
         setShowNotifications(false)
       }
-      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
-        setShowProfileMenu(false)
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setShowProfile(false)
       }
-      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
-        setIsSearchOpen(false)
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSearchQuery('')
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleMarkAllAsRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
-  }
-
-  const handleNotificationClick = (item: NotificationItem) => {
-    setNotifications((prev) => prev.map((n) => (n.id === item.id ? { ...n, read: true } : n)))
+  const handleNotificationClick = (link?: string) => {
     setShowNotifications(false)
-    if (item.link) {
-      navigate(item.link)
-    }
+    if (link) navigate(link)
   }
 
-  const handleSelectSearchResult = (result: SearchResultItem) => {
-    setSearchQuery('')
-    setIsSearchOpen(false)
-    navigate(result.path)
-  }
-
-  const userEmail = session?.user?.email || 'patient@healthone.com'
-  const patientCode = 'PULSEX-AVS-001'
+  const userEmail = profile?.email || user?.email || 'user@healthone.com'
+  const displayName = name ? (role === 'doctor' && !name.startsWith('Dr.') ? `Dr. ${name}` : name) : 'Healthcare User'
 
   return (
-    <header className="glass sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-edge px-3 py-3 sm:px-6">
-      {/* Mobile Hamburger Button */}
-      <button
-        onClick={onOpenMobileMenu}
-        className="grid h-9 w-9 place-items-center rounded-xl border border-edge text-mist hover:text-ink md:hidden shrink-0 cursor-pointer"
-        title="Open Navigation Menu"
-      >
-        <Menu size={18} />
-      </button>
+    <header className="glass sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-edge px-3 sm:px-6 py-3">
+      {/* Mobile Hamburger Menu Button */}
+      {onMenuToggle && (
+        <button
+          onClick={onMenuToggle}
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-edge text-mist hover:text-ink md:hidden cursor-pointer"
+          aria-label="Toggle Navigation Menu"
+        >
+          <Menu size={18} />
+        </button>
+      )}
 
-      {/* Global Interactive Search Bar */}
+      {/* Global Live Search Bar */}
       <div className="relative flex-1 min-w-0" ref={searchRef}>
-        <div className="flex items-center gap-2 rounded-xl border border-edge bg-panel2/60 px-3 py-2 text-mist focus-within:border-vital focus-within:ring-1 focus-within:ring-vital/30 transition-all">
+        <div className="flex items-center gap-2 rounded-xl border border-edge bg-panel2/60 px-3 py-2 text-mist focus-within:border-vital/50 focus-within:bg-panel2 transition-all">
           <Search size={16} className="shrink-0 text-vital" />
           <input
-            type="text"
             value={searchQuery}
-            onChange={(e) => {
-              setSearchQuery(e.target.value)
-              setIsSearchOpen(true)
-            }}
-            onFocus={() => setIsSearchOpen(true)}
-            placeholder="Search medications, lab reports, doctor visits, appointments..."
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search patients, medical records, reports…"
             className="w-full bg-transparent text-xs sm:text-sm text-ink placeholder:text-mist focus:outline-none"
           />
+          {searching && <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-vital border-t-transparent shrink-0" />}
           {searchQuery && (
-            <button
-              onClick={() => {
-                setSearchQuery('')
-                setIsSearchOpen(false)
-              }}
-              className="text-mist hover:text-ink shrink-0 cursor-pointer"
-            >
+            <button onClick={() => setSearchQuery('')} className="text-mist hover:text-ink shrink-0">
               <X size={14} />
             </button>
           )}
         </div>
 
-        {/* Live Search Results Overlay Box */}
+        {/* Global Live Search Overlay Dropdown */}
         <AnimatePresence>
-          {isSearchOpen && searchQuery.trim() !== '' && (
+          {searchQuery.trim() !== '' && (
             <motion.div
-              initial={{ opacity: 0, y: 6, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 6, scale: 0.98 }}
-              transition={{ duration: 0.15 }}
-              className="absolute left-0 right-0 top-12 z-50 rounded-2xl border border-edge bg-panel p-3 shadow-2xl space-y-2 max-h-80 overflow-y-auto"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 6 }}
+              className="absolute left-0 right-0 top-12 z-50 max-h-96 overflow-y-auto rounded-2xl border border-edge bg-panel p-3 shadow-2xl backdrop-blur-xl space-y-3"
             >
-              <div className="flex items-center justify-between border-b border-edge/60 pb-2 px-1">
-                <span className="text-[11px] font-semibold text-mist uppercase tracking-wider">
-                  Search Results ({searchResults.length})
-                </span>
-                <span className="text-[10px] text-mist">Press Esc to close</span>
-              </div>
-
-              {searchResults.length === 0 ? (
-                <div className="p-4 text-center text-xs text-mist">
-                  No matching records or medical files found for "{searchQuery}".
+              {searchResults.patients.length === 0 && searchResults.records.length === 0 && !searching ? (
+                <div className="py-6 text-center text-xs text-mist space-y-1">
+                  <p className="font-semibold text-ink">No matching results found for "{searchQuery}"</p>
+                  <p>Try searching by patient name, email, or record title.</p>
                 </div>
               ) : (
-                <div className="space-y-1">
-                  {searchResults.map((res) => (
-                    <div
-                      key={res.id}
-                      onClick={() => handleSelectSearchResult(res)}
-                      className="flex items-center gap-3 rounded-xl p-2.5 hover:bg-panel2 border border-transparent hover:border-edge transition-all cursor-pointer group"
-                    >
-                      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-vital-soft text-vital group-hover:scale-105 transition-transform">
-                        <res.icon size={16} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-semibold text-ink group-hover:text-vital transition-colors truncate">
-                          {res.title}
-                        </p>
-                        <p className="text-[11px] text-mist truncate">{res.subtitle}</p>
-                      </div>
-                      <span className="rounded-full bg-panel2 border border-edge/60 px-2 py-0.5 text-[10px] font-semibold text-mist capitalize shrink-0">
-                        {res.category}
-                      </span>
+                <>
+                  {searchResults.patients.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-mist px-1">
+                        Patients ({searchResults.patients.length})
+                      </p>
+                      {searchResults.patients.map((p) => (
+                        <div
+                          key={p.id}
+                          onClick={() => {
+                            setSearchQuery('')
+                            if (role === 'doctor') {
+                              navigate(`/doctor/patient-timeline?patientId=${p.id}`)
+                            } else {
+                              navigate(`/patient/timeline`)
+                            }
+                          }}
+                          className="flex items-center justify-between rounded-xl border border-edge/60 bg-panel2/60 p-2.5 hover:border-vital/40 hover:bg-panel2 cursor-pointer transition-colors"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className="grid h-7 w-7 place-items-center rounded-full bg-vital-soft text-vital text-xs font-bold">
+                              {p.name.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-xs font-semibold text-ink">{p.name}</p>
+                              <p className="text-[10px] text-mist">{p.email}</p>
+                            </div>
+                          </div>
+                          <span className="text-[10px] font-semibold text-vital flex items-center gap-1">
+                            View <ChevronRight size={12} />
+                          </span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  )}
+
+                  {searchResults.records.length > 0 && (
+                    <div className="space-y-1.5 border-t border-edge/60 pt-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-mist px-1">
+                        Medical Records ({searchResults.records.length})
+                      </p>
+                      {searchResults.records.map((r) => (
+                        <div
+                          key={r.id}
+                          onClick={() => {
+                            setSearchQuery('')
+                            if (role === 'doctor') {
+                              navigate(`/doctor/patient-timeline?patientId=${r.patient_id}`)
+                            } else {
+                              navigate(`/patient/records`)
+                            }
+                          }}
+                          className="flex items-center justify-between rounded-xl border border-edge/60 bg-panel2/60 p-2.5 hover:border-vital/40 hover:bg-panel2 cursor-pointer transition-colors"
+                        >
+                          <div>
+                            <p className="text-xs font-semibold text-ink">{r.title}</p>
+                            <span className="text-[10px] text-mist uppercase tracking-wide">{r.record_type}</span>
+                          </div>
+                          <span className="text-[10px] font-semibold text-vital flex items-center gap-1">
+                            View <ChevronRight size={12} />
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      {/* Portal Badge (Desktop) */}
+      {/* Role Portal Badge */}
       <div
         className="hidden items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium lg:flex shrink-0"
         style={{ borderColor: `${theme.accent}33`, backgroundColor: `${theme.accent}0D`, color: theme.accent }}
@@ -324,7 +354,7 @@ export default function Topbar({
         {theme.label} portal
       </div>
 
-      {/* Emergency Card Link */}
+      {/* Patient Emergency Shortcut */}
       {role === 'patient' && (
         <motion.button
           whileTap={{ scale: 0.9 }}
@@ -336,13 +366,13 @@ export default function Topbar({
         </motion.button>
       )}
 
-      {/* 🔔 Interactive Notification Bell & Popover */}
+      {/* Interactive Notification Bell */}
       <div className="relative shrink-0" ref={notifRef}>
         <motion.button
-          whileTap={{ scale: 0.9 }}
+          whileTap={{ scale: 0.92 }}
           onClick={() => {
-            setShowNotifications((v) => !v)
-            setShowProfileMenu(false)
+            setShowNotifications(!showNotifications)
+            setShowProfile(false)
           }}
           className={`relative grid h-9 w-9 place-items-center rounded-xl border transition-colors cursor-pointer ${
             showNotifications ? 'border-vital bg-vital-soft text-vital' : 'border-edge text-mist hover:text-ink'
@@ -353,223 +383,211 @@ export default function Topbar({
           {unreadCount > 0 && (
             <motion.span
               animate={{ scale: [1, 1.25, 1] }}
-              transition={{ repeat: Infinity, duration: 1.6 }}
-              className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-vital text-[10px] font-bold text-void shadow-glow"
+              transition={{ repeat: Infinity, duration: 1.8 }}
+              className="absolute -right-1 -top-1 grid h-4 min-w-[16px] px-1 place-items-center rounded-full bg-vital text-[10px] font-bold text-void shadow-glow"
             >
               {unreadCount}
             </motion.span>
           )}
         </motion.button>
 
+        {/* Notifications Dropdown Popover */}
         <AnimatePresence>
           {showNotifications && (
             <motion.div
               initial={{ opacity: 0, y: 8, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.96 }}
-              transition={{ duration: 0.15 }}
-              className="absolute right-0 top-12 z-50 w-80 sm:w-96 rounded-2xl border border-edge bg-panel p-4 shadow-2xl space-y-3"
+              transition={{ duration: 0.18 }}
+              className="absolute right-0 top-12 z-50 w-80 sm:w-96 rounded-2xl border border-edge bg-panel p-4 shadow-2xl backdrop-blur-xl"
             >
-              <div className="flex items-center justify-between border-b border-edge pb-2.5">
+              <div className="flex items-center justify-between border-b border-edge pb-3 mb-3">
                 <div className="flex items-center gap-2">
                   <Bell size={16} className="text-vital" />
-                  <h3 className="text-xs font-semibold text-ink">Notifications</h3>
+                  <span className="font-display text-sm font-semibold text-ink">Notifications</span>
                   {unreadCount > 0 && (
-                    <span className="rounded-full bg-vital-soft px-2 py-0.5 text-[10px] font-bold text-vital">
+                    <span className="rounded-full bg-vital-soft px-2 py-0.5 text-[10px] font-semibold text-vital">
                       {unreadCount} new
                     </span>
                   )}
                 </div>
                 {unreadCount > 0 && (
                   <button
-                    onClick={handleMarkAllAsRead}
-                    className="text-[11px] text-vital hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                    onClick={() => setUnreadCount(0)}
+                    className="text-[11px] text-mist hover:text-ink transition-colors cursor-pointer"
                   >
-                    <Check size={12} /> Mark all read
+                    Clear badge
                   </button>
                 )}
               </div>
 
-              <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
-                {notifications.map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => handleNotificationClick(item)}
-                    className={`group flex items-start gap-2.5 rounded-xl border p-2.5 transition-all cursor-pointer ${
-                      item.read
-                        ? 'border-edge/50 bg-panel2/30 opacity-75 hover:opacity-100'
-                        : 'border-vital/30 bg-vital-soft/20 shadow-sm'
-                    }`}
-                  >
+              {notifications.length === 0 ? (
+                <div className="py-8 text-center text-xs text-mist space-y-1">
+                  <Bell size={24} className="mx-auto text-mist/40 mb-2" />
+                  <p className="font-semibold text-ink">No new notifications</p>
+                  <p>All appointment requests and logs are up to date.</p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                  {notifications.map((item) => (
                     <div
-                      className={`grid h-7 w-7 shrink-0 place-items-center rounded-lg text-xs mt-0.5 ${
+                      key={item.id}
+                      onClick={() => handleNotificationClick(item.link)}
+                      className="flex items-start gap-3 rounded-xl border border-edge/60 bg-panel2/60 p-3 hover:border-vital/40 hover:bg-panel2 cursor-pointer transition-all"
+                    >
+                      <div className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl ${
                         item.type === 'appointment'
                           ? 'bg-vital-soft text-vital'
-                          : item.type === 'ocr'
-                          ? 'bg-ai-soft text-ai'
                           : item.type === 'emergency'
                           ? 'bg-emergency-soft text-emergency'
+                          : item.type === 'ocr'
+                          ? 'bg-ai-soft text-ai'
                           : 'bg-panel2 text-mist'
-                      }`}
-                    >
-                      {item.type === 'appointment' && <Calendar size={14} />}
-                      {item.type === 'ocr' && <CheckCircle2 size={14} />}
-                      {item.type === 'emergency' && <ShieldAlert size={14} />}
-                      {item.type === 'medication' && <Clock size={14} />}
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-1">
-                        <p className="text-xs font-semibold text-ink truncate">{item.title}</p>
-                        <span className="text-[10px] text-mist shrink-0">{item.time}</span>
+                      }`}>
+                        {item.type === 'appointment' ? <Calendar size={15} /> : item.type === 'emergency' ? <AlertTriangle size={15} /> : <FileText size={15} />}
                       </div>
-                      <p className="text-[11px] text-mist mt-0.5 line-clamp-2 leading-relaxed">
-                        {item.message}
-                      </p>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-1">
+                          <p className="text-xs font-semibold text-ink truncate">{item.title}</p>
+                          <span className="text-[10px] text-mist shrink-0">{item.time}</span>
+                        </div>
+                        <p className="text-[11px] text-mist leading-relaxed mt-0.5 line-clamp-2">{item.description}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      {/* 👤 Aligned Profile Avatar & Dropdown Menu */}
+      {/* Interactive Profile Popover Avatar */}
       <div className="relative shrink-0" ref={profileRef}>
         <motion.button
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.95 }}
+          whileTap={{ scale: 0.92 }}
           onClick={() => {
-            setShowProfileMenu((v) => !v)
+            setShowProfile(!showProfile)
             setShowNotifications(false)
           }}
-          className={`flex items-center gap-1.5 rounded-full border-2 p-0.5 transition-all cursor-pointer ${
-            showProfileMenu ? 'border-vital bg-vital-soft' : 'border-vital/40 hover:border-vital'
-          }`}
-          title="Profile Menu"
+          className="flex items-center gap-2 rounded-xl border border-edge p-1 hover:border-vital/40 transition-colors cursor-pointer"
+          title="Account Profile"
         >
           <div
-            className="grid h-8 w-8 place-items-center rounded-full text-xs font-bold text-white shadow-sm"
+            className="grid h-8 w-8 place-items-center rounded-full text-xs font-semibold text-white shadow-sm"
             style={{ background: `linear-gradient(135deg, ${theme.accent}, #22D3EE)` }}
           >
-            {name.slice(0, 1).toUpperCase()}
+            {name ? name.slice(0, 1).toUpperCase() : 'U'}
           </div>
-          <ChevronDown size={14} className={`text-mist transition-transform duration-200 ${showProfileMenu ? 'rotate-180 text-vital' : ''}`} />
         </motion.button>
 
-        {/* Anchored Profile Dropdown Menu */}
+        {/* Profile Card Popover */}
         <AnimatePresence>
-          {showProfileMenu && (
+          {showProfile && (
             <motion.div
               initial={{ opacity: 0, y: 8, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 8, scale: 0.96 }}
-              transition={{ duration: 0.15 }}
-              className="absolute right-0 top-12 z-50 w-72 sm:w-80 rounded-2xl border border-edge bg-panel p-4 shadow-2xl space-y-3"
+              transition={{ duration: 0.18 }}
+              className="absolute right-0 top-12 z-50 w-80 rounded-2xl border border-edge bg-panel p-4 shadow-2xl backdrop-blur-xl space-y-4"
             >
-              {/* Profile Card Banner */}
-              <div className="flex items-center gap-3 border-b border-edge pb-3">
+              {/* Profile Card Header */}
+              <div className="flex items-center gap-3 border-b border-edge/60 pb-3">
                 <div
-                  className="grid h-11 w-11 shrink-0 place-items-center rounded-full text-sm font-bold text-white shadow-md"
+                  className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-base font-bold text-white shadow-md"
                   style={{ background: `linear-gradient(135deg, ${theme.accent}, #22D3EE)` }}
                 >
-                  {name.slice(0, 1).toUpperCase()}
+                  {name ? name.slice(0, 1).toUpperCase() : 'U'}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="font-display text-sm font-bold text-ink truncate">{name}</h3>
-                  <span className="inline-block mt-0.5 rounded-full bg-vital-soft px-2 py-0.5 text-[10px] font-bold text-vital capitalize">
-                    {role} Portal
+                  <h3 className="font-display text-sm font-bold text-ink truncate">{displayName}</h3>
+                  <p className="text-xs text-mist flex items-center gap-1 truncate mt-0.5">
+                    <Mail size={12} className="shrink-0 text-vital" /> {userEmail}
+                  </p>
+                  <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-vital-soft px-2.5 py-0.5 text-[10px] font-semibold text-vital">
+                    <ShieldCheck size={11} /> {role.toUpperCase()} VERIFIED
                   </span>
                 </div>
               </div>
 
-              {/* Information List */}
+              {/* Account Info Details */}
               <div className="space-y-2 text-xs">
-                <div className="flex items-center justify-between rounded-xl bg-panel2 p-2.5 border border-edge/60">
-                  <div className="flex items-center gap-2 text-mist">
-                    <Mail size={14} className="text-vital shrink-0" />
-                    <span>Email ID</span>
-                  </div>
-                  <span className="font-mono text-ink font-medium truncate max-w-[140px] text-right" title={userEmail}>
-                    {userEmail}
-                  </span>
+                <div className="flex items-center justify-between rounded-xl border border-edge/60 bg-panel2/60 p-2.5">
+                  <span className="text-mist">Portal Role:</span>
+                  <span className="font-semibold text-ink capitalize">{role} Portal</span>
                 </div>
 
-                <div className="flex items-center justify-between rounded-xl bg-panel2 p-2.5 border border-edge/60">
-                  <div className="flex items-center gap-2 text-mist">
-                    <User size={14} className="text-vital shrink-0" />
-                    <span>Role</span>
+                {user?.id && (
+                  <div className="flex items-center justify-between rounded-xl border border-edge/60 bg-panel2/60 p-2.5">
+                    <span className="text-mist flex items-center gap-1">
+                      <Key size={12} /> Account ID:
+                    </span>
+                    <span className="font-mono text-[11px] text-ink font-semibold">
+                      {user.id.slice(0, 8)}…{user.id.slice(-4)}
+                    </span>
                   </div>
-                  <span className="font-semibold text-ink capitalize">{role}</span>
-                </div>
-
-                <div className="flex items-center justify-between rounded-xl bg-panel2 p-2.5 border border-edge/60">
-                  <div className="flex items-center gap-2 text-mist">
-                    <ShieldCheck size={14} className="text-vital shrink-0" />
-                    <span>Emergency Code</span>
-                  </div>
-                  <span className="font-mono text-vital font-bold">{patientCode}</span>
-                </div>
-
-                <div className="flex items-center justify-between rounded-xl bg-panel2 p-2.5 border border-edge/60">
-                  <div className="flex items-center gap-2 text-mist">
-                    <Droplet size={14} className="text-emergency shrink-0" />
-                    <span>Blood Group</span>
-                  </div>
-                  <span className="font-bold text-ink">O+</span>
-                </div>
+                )}
               </div>
 
-              {/* Action Links & Logout Option */}
-              <div className="space-y-1.5 border-t border-edge pt-3 text-xs">
-                {role === 'patient' && (
-                  <>
-                    <button
-                      onClick={() => {
-                        setShowProfileMenu(false)
-                        navigate('/patient/emergency-card')
-                      }}
-                      className="w-full flex items-center justify-between rounded-xl px-3 py-2 text-ink hover:bg-panel2 transition-colors cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2 font-medium">
-                        <ShieldAlert size={15} className="text-emergency" /> Emergency Medical Card
-                      </span>
-                      <ExternalLink size={13} className="text-mist" />
-                    </button>
+              {/* Action Buttons */}
+              <div className="space-y-2 border-t border-edge/60 pt-3">
+                {role === 'doctor' && (
+                  <button
+                    onClick={() => {
+                      setShowProfile(false)
+                      navigate('/doctor/appointments')
+                    }}
+                    className="flex w-full items-center justify-between rounded-xl border border-edge bg-panel2 px-3 py-2 text-xs text-ink hover:border-vital/40 transition-colors cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Calendar size={14} className="text-vital" /> Manage Appointments
+                    </span>
+                    <ChevronRight size={14} className="text-mist" />
+                  </button>
+                )}
 
-                    <button
-                      onClick={() => {
-                        setShowProfileMenu(false)
-                        navigate('/patient/appointments')
-                      }}
-                      className="w-full flex items-center justify-between rounded-xl px-3 py-2 text-ink hover:bg-panel2 transition-colors cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2 font-medium">
-                        <Calendar size={15} className="text-vital" /> My Appointments
-                      </span>
-                      <ExternalLink size={13} className="text-mist" />
-                    </button>
-                  </>
+                {role === 'patient' && (
+                  <button
+                    onClick={() => {
+                      setShowProfile(false)
+                      navigate('/patient/appointments')
+                    }}
+                    className="flex w-full items-center justify-between rounded-xl border border-edge bg-panel2 px-3 py-2 text-xs text-ink hover:border-vital/40 transition-colors cursor-pointer"
+                  >
+                    <span className="flex items-center gap-2">
+                      <Calendar size={14} className="text-vital" /> My Appointments
+                    </span>
+                    <ChevronRight size={14} className="text-mist" />
+                  </button>
                 )}
 
                 <button
-                  onClick={() => {
-                    setShowProfileMenu(false)
-                    logout()
+                  onClick={async () => {
+                    setShowProfile(false)
+                    await logout()
                     navigate('/')
                   }}
-                  className="w-full flex items-center justify-between rounded-xl px-3 py-2 text-emergency hover:bg-emergency-soft/50 font-semibold transition-colors cursor-pointer mt-1 border border-emergency/20"
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-emergency/30 bg-emergency-soft py-2 text-xs font-semibold text-emergency hover:bg-emergency/20 transition-all cursor-pointer"
                 >
-                  <span className="flex items-center gap-2">
-                    <LogOut size={15} /> Log Out of Account
-                  </span>
+                  <LogOut size={14} /> Log Out
                 </button>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
+
+      {/* Logout Shortcut */}
+      <button
+        onClick={async () => {
+          await logout()
+          navigate('/')
+        }}
+        className="grid h-9 w-9 place-items-center rounded-xl border border-edge text-mist hover:text-ink cursor-pointer shrink-0"
+        title="Log out"
+      >
+        <LogOut size={15} />
+      </button>
     </header>
   )
 }

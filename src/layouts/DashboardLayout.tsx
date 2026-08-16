@@ -50,7 +50,7 @@ export default function DashboardLayout({ role }: { role: Role }) {
       <div className="flex flex-1 flex-col min-w-0">
         <Topbar
           role={role}
-          onOpenMobileMenu={() => setMobileOpen(true)}
+          onMenuToggle={() => setMobileOpen((open) => !open)}
         />
         <main className="flex-1 px-3 py-4 sm:px-6 sm:py-6">
           <AnimatePresence mode="wait">

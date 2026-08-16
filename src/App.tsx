@@ -20,7 +20,10 @@ import PatientAnalytics from './pages/patient/Analytics'
 import PatientAppointments from './pages/patient/Appointments'
 
 import DoctorHome from './pages/doctor/DoctorHome'
-import DoctorAISummary from './pages/doctor/AISummary'
+import DoctorAppointments from './pages/doctor/Appointments'
+import DoctorPatientTimeline from './pages/doctor/PatientTimeline'
+import DoctorNewEntry from './pages/doctor/NewEntry'
+import DoctorEmergencyLog from './pages/doctor/EmergencyLog'
 import HospitalHome from './pages/hospital/HospitalHome'
 import DoctorManagement from './pages/hospital/DoctorManagement'
 import Departments from './pages/hospital/Departments'
@@ -35,7 +38,10 @@ const overrides: Partial<Record<string, JSX.Element>> = {
   '/patient/analytics': <PatientAnalytics />,
   '/patient/appointments': <PatientAppointments />,
   '/doctor': <DoctorHome />,
-  '/doctor/ai-summary': <DoctorAISummary />,
+  '/doctor/appointments': <DoctorAppointments />,
+  '/doctor/patient-timeline': <DoctorPatientTimeline />,
+  '/doctor/new-entry': <DoctorNewEntry />,
+  '/doctor/emergency-log': <DoctorEmergencyLog />,
   '/hospital': <HospitalHome />,
   '/hospital/doctors': <DoctorManagement />,
   '/hospital/departments': <Departments />,

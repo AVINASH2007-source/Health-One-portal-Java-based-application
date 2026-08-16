@@ -7,6 +7,7 @@ import GoogleIcon from '../components/ui/GoogleIcon'
 import { getRoleTheme } from '../lib/roleTheme'
 import { useAuth } from '../lib/AuthContext'
 import { Role } from '../lib/navConfig'
+import { supabase } from '../lib/supabase'
 
 const floatingStats = [
   { icon: Activity, label: 'Records synced', value: '128', pos: 'left-4 top-10' },
@@ -53,6 +54,9 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
+  const [medicalLicenseId, setMedicalLicenseId] = useState('')
+  const [specialty, setSpecialty] = useState('')
+  const [hospitalAffiliation, setHospitalAffiliation] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [formSuccess, setFormSuccess] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -147,6 +151,10 @@ export default function Login() {
         setFormError('Enter your full name.')
         return
       }
+      if (role.key === 'doctor' && (!medicalLicenseId.trim() || !specialty.trim())) {
+        setFormError('Medical License ID and Specialty are required for Doctor registration.')
+        return
+      }
       if (password !== confirmPassword) {
         setFormError("Passwords don't match.")
         return
@@ -158,12 +166,27 @@ export default function Login() {
 
       setSubmitting(true)
       const res = await signUpWithPassword(email, password, fullName.trim(), role.key)
-      setSubmitting(false)
 
       if (res.error) {
+        setSubmitting(false)
         setFormError(res.error)
         return
       }
+
+      // If doctor registration, insert credentials into doctors table
+      if (role.key === 'doctor') {
+        const { data: userData } = await supabase.auth.getUser()
+        if (userData?.user?.id) {
+          await supabase.from('doctors').upsert({
+            id: userData.user.id,
+            medical_license_id: medicalLicenseId.trim(),
+            specialty: specialty.trim(),
+            hospital_affiliation: hospitalAffiliation.trim() || null,
+          })
+        }
+      }
+
+      setSubmitting(false)
 
       if (res.requiresVerification) {
         setCheckEmailNotice(true)
@@ -408,6 +431,29 @@ export default function Login() {
                       type="password"
                       className="w-full rounded-xl border border-edge bg-panel2 px-4 py-3 text-sm text-ink placeholder:text-mist focus:outline-none focus:ring-2 focus:ring-vital/30"
                     />
+                  )}
+
+                  {mode === 'signup' && role.key === 'doctor' && (
+                    <>
+                      <input
+                        value={medicalLicenseId}
+                        onChange={(e) => setMedicalLicenseId(e.target.value)}
+                        placeholder="Medical License ID (e.g. MD-89241) *"
+                        className="w-full rounded-xl border border-edge bg-panel2 px-4 py-3 text-sm text-ink placeholder:text-mist focus:outline-none focus:ring-2 focus:ring-vital/30"
+                      />
+                      <input
+                        value={specialty}
+                        onChange={(e) => setSpecialty(e.target.value)}
+                        placeholder="Medical Specialty (e.g. Cardiology) *"
+                        className="w-full rounded-xl border border-edge bg-panel2 px-4 py-3 text-sm text-ink placeholder:text-mist focus:outline-none focus:ring-2 focus:ring-vital/30"
+                      />
+                      <input
+                        value={hospitalAffiliation}
+                        onChange={(e) => setHospitalAffiliation(e.target.value)}
+                        placeholder="Hospital Affiliation (e.g. City General Hospital)"
+                        className="w-full rounded-xl border border-edge bg-panel2 px-4 py-3 text-sm text-ink placeholder:text-mist focus:outline-none focus:ring-2 focus:ring-vital/30"
+                      />
+                    </>
                   )}
 
                   {mode === 'signup' && (

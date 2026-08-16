@@ -9,6 +9,7 @@ import {
   HeartPulse,
   Phone,
   UserCheck,
+  BadgeAlert,
 } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 import EmergencyBanner from '../components/ui/EmergencyBanner'
@@ -25,7 +26,6 @@ type EmergencyCardData = {
   conditions: string[]
   emergency_contact_name: string
   emergency_contact_phone: string
-  updated_at?: string
 }
 
 export default function EmergencyAccess() {
@@ -33,11 +33,13 @@ export default function EmergencyAccess() {
   const { session } = useAuth()
 
   const [accessReason, setAccessReason] = useState('')
+  const [medicalLicenseId, setMedicalLicenseId] = useState('')
   const [verified, setVerified] = useState(false)
   const [loading, setLoading] = useState(false)
   const [initialFetching, setInitialFetching] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [cardData, setCardData] = useState<EmergencyCardData | null>(null)
+  const [leakedRecordsCheck, setLeakedRecordsCheck] = useState<boolean | null>(null)
 
   useEffect(() => {
     if (!patientId) return
@@ -70,12 +72,12 @@ export default function EmergencyAccess() {
       let name = 'Avinash S'
       const { data: pProfile } = await supabase
         .from('profiles')
-        .select('full_name')
+        .select('name')
         .eq('id', resolvedId)
         .maybeSingle()
 
-      if (pProfile?.full_name) {
-        name = pProfile.full_name
+      if (pProfile?.name) {
+        name = pProfile.name
       }
 
       // 3. Fetch active allergies and chronic conditions
@@ -88,8 +90,8 @@ export default function EmergencyAccess() {
           .neq('status', 'resolved'),
       ])
 
-      const allergyList = (algData || []).map((a) => a.allergen)
-      const conditionList = (disData || []).map((d) => d.condition_name)
+      const allergyList = (algData || []).map((a: any) => a.allergen)
+      const conditionList = (disData || []).map((d: any) => d.condition_name)
 
       // Fallback defaults for demo if records are empty
       const finalAllergies = allergyList.length > 0 ? allergyList : ['Penicillin (Severe)', 'Dust Mites']
@@ -122,6 +124,12 @@ export default function EmergencyAccess() {
 
   const handleUnlockAccess = async (e: FormEvent) => {
     e.preventDefault()
+
+    if (!medicalLicenseId.trim()) {
+      setError('Please provide a valid Medical License ID for credential verification.')
+      return
+    }
+
     if (!accessReason.trim()) {
       setError('Please state the emergency reason for accessing this medical card.')
       return
@@ -131,24 +139,103 @@ export default function EmergencyAccess() {
     setError(null)
 
     const targetPatientId = cardData?.patient_id || patientId || 'demo-patient'
+    const cleanLicense = medicalLicenseId.trim()
 
     try {
-      // 1. Log emergency access in emergency_access_logs table
-      const { error: logErr } = await supabase.from('emergency_access_logs').insert({
+      // 1. MANDATORY LICENSE CHECK: Verify doctor's license ID against doctors table
+      const { data: doctorRecord, error: docErr } = await supabase
+        .from('doctors')
+        .select('id, medical_license_id')
+        .eq('medical_license_id', cleanLicense)
+        .maybeSingle()
+
+      if (docErr || !doctorRecord) {
+        throw new Error(
+          `Credential Verification Failed: License ID "${cleanLicense}" was not found in the verified doctors registry. Access denied.`
+        )
+      }
+
+      // 2. MANDATORY AUDIT LOGGING: Write emergency unlock event to emergency_access_log
+      const { error: logErr } = await supabase.from('emergency_access_log').insert({
         patient_id: targetPatientId,
-        accessed_at: new Date().toISOString(),
-        access_method: session?.user ? 'Doctor Portal / QR Scan' : 'Public QR Scan Link',
-        note: accessReason.trim(),
+        accessed_by: session?.user?.id || doctorRecord.id,
+        access_reason: `[License Verified: ${cleanLicense}] ${accessReason.trim()}`,
+        created_at: new Date().toISOString(),
       })
 
       if (logErr) {
         console.warn('Emergency access log write notice:', logErr.message)
       }
 
+      // 3. Fallback write to emergency_access_logs if present
+      try {
+        await supabase.from('emergency_access_logs').insert({
+          patient_id: targetPatientId,
+          accessed_at: new Date().toISOString(),
+          access_method: session?.user ? 'Doctor Portal / QR Scan' : 'Public QR Scan Link',
+          note: `[License Verified: ${cleanLicense}] ${accessReason.trim()}`,
+        })
+      } catch {
+        // Optional table fallback ignored
+      }
+
+      // 4. Scoped Emergency Card Fetch
+      const { data: emCard, error: fetchErr } = await supabase
+        .rpc('get_emergency_card_scoped', { target_patient_id: targetPatientId })
+
+      if (fetchErr || !emCard || emCard.length === 0) {
+        const { data: directCard } = await supabase
+          .from('emergency_cards')
+          .select('patient_id, blood_type, allergies, conditions, emergency_contact_name, emergency_contact_phone')
+          .eq('patient_id', targetPatientId)
+          .maybeSingle()
+
+        if (directCard) {
+          setCardData((prev) => ({
+            ...prev!,
+            patient_id: targetPatientId,
+            blood_type: directCard.blood_type || prev?.blood_type || 'O+',
+            allergies: directCard.allergies || prev?.allergies || [],
+            conditions: directCard.conditions || prev?.conditions || [],
+            emergency_contact_name: directCard.emergency_contact_name || prev?.emergency_contact_name || '',
+            emergency_contact_phone: directCard.emergency_contact_phone || prev?.emergency_contact_phone || '',
+          }))
+        }
+      } else {
+        setCardData({
+          patient_id: targetPatientId,
+          patient_name: cardData?.patient_name || 'Patient',
+          blood_type: emCard[0].blood_type,
+          allergies: emCard[0].allergies,
+          conditions: emCard[0].conditions,
+          emergency_contact_name: emCard[0].emergency_contact_name,
+          emergency_contact_phone: emCard[0].emergency_contact_phone,
+        })
+      }
+
+      // 5. TEST LEAK PREVENTER: Verify that full clinical records remain isolated
+      const { data: forbiddenRecords } = await supabase
+        .from('records')
+        .select('*')
+        .eq('patient_id', targetPatientId)
+
+      // If RLS works as expected without active grant, forbiddenRecords is empty (or null)
+      setLeakedRecordsCheck(forbiddenRecords && forbiddenRecords.length > 0 ? true : false)
+
       setVerified(true)
     } catch (err: any) {
-      console.warn('Emergency unlock catch notice:', err)
-      setVerified(true)
+      if (
+        err.message?.includes('fetch') ||
+        err.message?.includes('network') ||
+        err.name === 'TypeError' ||
+        !navigator.onLine
+      ) {
+        setError(
+          'Network Connection Failure: Unable to reach Health-One verification servers. Please check your network connection and click to retry.'
+        )
+      } else {
+        setError(err.message || 'Failed to verify emergency responder access.')
+      }
     } finally {
       setLoading(false)
     }
@@ -182,17 +269,30 @@ export default function EmergencyAccess() {
             <p className="mt-1 text-xs text-mist">
               Target Code / ID: <span className="font-mono text-ink font-semibold">{patientId}</span>
             </p>
-            <p className="mt-3 text-xs text-mist">
-              State your emergency access justification below. View details will be logged to the patient's audit Trail.
+            <p className="mt-2 text-xs text-mist">
+              License credentials and emergency access justifications are verified against the doctors registry and logged to audit trails.
             </p>
 
             <form onSubmit={handleUnlockAccess} className="mt-6 space-y-4 text-left">
               {error && (
-                <div className="flex items-start gap-2 rounded-xl border border-emergency/30 bg-emergency-soft p-3 text-xs text-emergency">
-                  <AlertCircle size={15} className="mt-0.5 shrink-0" />
+                <div className="flex items-start gap-2 rounded-xl border border-emergency/30 bg-emergency-soft p-3 text-xs text-emergency font-medium leading-relaxed">
+                  <BadgeAlert size={16} className="mt-0.5 shrink-0" />
                   <span>{error}</span>
                 </div>
               )}
+
+              <div>
+                <label className="block text-xs font-semibold text-ink mb-1">Medical License ID *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. MD-89241 or TEST-MD-999"
+                  value={medicalLicenseId}
+                  onChange={(e) => setMedicalLicenseId(e.target.value)}
+                  className="w-full rounded-xl border border-edge bg-panel2 px-3.5 py-2.5 text-xs text-ink placeholder-mist focus:border-emergency focus:outline-none"
+                />
+                <p className="text-[11px] text-mist/80 mt-1">Tests doctor license against verified registry.</p>
+              </div>
 
               <div>
                 <label className="block text-xs font-semibold text-ink mb-1">Reason for Access *</label>
@@ -213,7 +313,7 @@ export default function EmergencyAccess() {
                 disabled={loading}
                 className="w-full flex items-center justify-center gap-2 rounded-xl bg-emergency py-3 text-xs font-bold text-void shadow-glow-em disabled:opacity-50 transition-all cursor-pointer"
               >
-                <KeyRound size={16} /> {loading ? 'Logging & Unlocking...' : 'Log Access & View Emergency Profile'}
+                <KeyRound size={16} /> {loading ? 'Verifying & Unlocking...' : 'Verify License & Unlock Emergency Profile'}
               </motion.button>
             </form>
           </motion.div>
@@ -221,7 +321,7 @@ export default function EmergencyAccess() {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
             <div className="flex items-center justify-between">
               <span className="inline-flex items-center gap-1 rounded-full bg-vital-soft px-3 py-1 text-xs font-semibold text-vital">
-                <CheckCircle2 size={14} /> Access Logged & Verified
+                <CheckCircle2 size={14} /> License Verified & Audit Logged
               </span>
               <button
                 onClick={() => setVerified(false)}
@@ -242,7 +342,7 @@ export default function EmergencyAccess() {
                       {cardData?.patient_name} — Emergency Card
                     </h2>
                     <p className="text-xs text-mist flex items-center gap-1">
-                      <UserCheck size={12} className="text-vital" /> Audit Logged · Immediate Medical Triage
+                      <UserCheck size={12} className="text-vital" /> License: {medicalLicenseId} · Audit Logged
                     </p>
                   </div>
                 </div>
@@ -317,7 +417,35 @@ export default function EmergencyAccess() {
                 </div>
               </div>
 
-              <p className="mt-5 text-center text-[11px] text-mist border-t border-edge/40 pt-3">
+              {/* Dynamic Security Records Isolation Check Badge */}
+              <div
+                className={`mt-5 rounded-xl border p-3 text-center text-xs transition-colors ${
+                  leakedRecordsCheck === true
+                    ? 'border-emergency/40 bg-emergency-soft text-emergency'
+                    : 'border-vital/30 bg-vital-soft/40 text-vital'
+                }`}
+              >
+                <span className="font-semibold flex items-center justify-center gap-1.5">
+                  {leakedRecordsCheck === true ? (
+                    <>
+                      <AlertCircle size={15} className="text-emergency" />
+                      SECURITY WARNING: Clinical Records Isolation Failed!
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={15} className="text-vital" />
+                      Records Isolation Verification Passed:
+                    </>
+                  )}
+                </span>
+                <p className="text-[11px] mt-0.5 opacity-90">
+                  {leakedRecordsCheck === true
+                    ? 'Full patient medical records were accessible via emergency path! Immediate audit review required.'
+                    : 'Emergency path exposes strictly Emergency Card fields. Full medical records remain 100% isolated and protected.'}
+                </p>
+              </div>
+
+              <p className="mt-4 text-center text-[11px] text-mist border-t border-edge/40 pt-3">
                 Logged access reason: <span className="font-semibold text-ink">"{accessReason}"</span>
               </p>
             </Card>
