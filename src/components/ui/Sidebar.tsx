@@ -8,10 +8,12 @@ export default function Sidebar({
   role,
   collapsed,
   onToggle,
+  onItemClick,
 }: {
   role: Role
   collapsed: boolean
   onToggle: () => void
+  onItemClick?: () => void
 }) {
   const items = navByRole[role]
 
@@ -37,7 +39,12 @@ export default function Sidebar({
 
       <nav className="flex-1 space-y-1 overflow-y-auto">
         {items.map((item, i) => (
-          <NavLink key={item.path} to={item.path} end={item.path.split('/').length <= 2}>
+          <NavLink
+            key={item.path}
+            to={item.path}
+            end={item.path.split('/').length <= 2}
+            onClick={onItemClick}
+          >
             {({ isActive }) => (
               <motion.div
                 initial={{ opacity: 0, x: -8 }}

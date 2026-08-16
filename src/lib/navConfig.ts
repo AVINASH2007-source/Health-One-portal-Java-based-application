@@ -1,7 +1,7 @@
 import {
   LayoutDashboard, Activity, FileText, Pill, ShieldAlert, LineChart,
   Search, Stethoscope, Sparkles, ClipboardPlus, History, Building2,
-  UserCog, ScrollText, Languages,
+  UserCog, ScrollText, Languages, CalendarCheck,
 } from 'lucide-react'
 
 export type Role = 'patient' | 'doctor' | 'hospital'
@@ -29,7 +29,7 @@ export const navByRole: Record<Role, { label: string; path: string; icon: any; o
   doctor: [
     { label: 'Patient Search', path: '/doctor', icon: Search, owner: 'Member 2' },
     { label: 'Patient Timeline', path: '/doctor/patient-timeline', icon: Stethoscope, owner: 'Member 2' },
-    { label: 'AI Summary', path: '/doctor/ai-summary', icon: Sparkles, owner: 'Member 2' },
+    { label: 'Appointments', path: '/doctor/appointments', icon: CalendarCheck, owner: 'Member 2' },
     { label: 'New Entry', path: '/doctor/new-entry', icon: ClipboardPlus, owner: 'Member 2' },
     { label: 'Emergency Access Log', path: '/doctor/emergency-log', icon: History, owner: 'Member 2' },
   ],

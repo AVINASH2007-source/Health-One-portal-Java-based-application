@@ -7,14 +7,52 @@ import { Role } from '../lib/navConfig'
 
 export default function DashboardLayout({ role }: { role: Role }) {
   const [collapsed, setCollapsed] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const location = useLocation()
 
   return (
     <div className="flex min-h-screen bg-void">
-      <Sidebar role={role} collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
-      <div className="flex flex-1 flex-col">
-        <Topbar role={role} />
-        <main className="flex-1 px-6 py-6">
+      {/* Desktop & Tablet Sidebar */}
+      <div className="hidden sm:block">
+        <Sidebar role={role} collapsed={collapsed} onToggle={() => setCollapsed((c) => !c)} />
+      </div>
+
+      {/* Mobile Drawer Navigation Overlay */}
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setMobileMenuOpen(false)}
+              className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm sm:hidden"
+            />
+            <motion.div
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+              className="fixed inset-y-0 left-0 z-50 w-72 bg-cardsurface border-r border-edge p-2 sm:hidden"
+            >
+              <Sidebar
+                role={role}
+                collapsed={false}
+                onToggle={() => setMobileMenuOpen(false)}
+                onItemClick={() => setMobileMenuOpen(false)}
+              />
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      <div className="flex flex-1 flex-col min-w-0">
+        <Topbar
+          role={role}
+          onMenuToggle={() => setMobileMenuOpen((m) => !m)}
+          mobileMenuOpen={mobileMenuOpen}
+        />
+        <main className="flex-1 px-3 sm:px-6 py-4 sm:py-6 overflow-x-hidden">
           <AnimatePresence mode="wait">
             <motion.div
               key={location.pathname}

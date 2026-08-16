@@ -20,7 +20,10 @@ import PatientAnalytics from './pages/patient/Analytics'
 import PatientLanguage from './pages/patient/Language'
 
 import DoctorHome from './pages/doctor/DoctorHome'
-import DoctorAISummary from './pages/doctor/AISummary'
+import DoctorAppointments from './pages/doctor/Appointments'
+import DoctorPatientTimeline from './pages/doctor/PatientTimeline'
+import DoctorNewEntry from './pages/doctor/NewEntry'
+import DoctorEmergencyLog from './pages/doctor/EmergencyLog'
 import HospitalHome from './pages/hospital/HospitalHome'
 
 const overrides: Partial<Record<string, JSX.Element>> = {
@@ -32,7 +35,10 @@ const overrides: Partial<Record<string, JSX.Element>> = {
   '/patient/analytics': <PatientAnalytics />,
   '/patient/language': <PatientLanguage />,
   '/doctor': <DoctorHome />,
-  '/doctor/ai-summary': <DoctorAISummary />,
+  '/doctor/appointments': <DoctorAppointments />,
+  '/doctor/patient-timeline': <DoctorPatientTimeline />,
+  '/doctor/new-entry': <DoctorNewEntry />,
+  '/doctor/emergency-log': <DoctorEmergencyLog />,
   '/hospital': <HospitalHome />,
 }
 
