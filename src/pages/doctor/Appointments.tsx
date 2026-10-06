@@ -36,13 +36,23 @@ export default function DoctorAppointments() {
 
     setLoading(true)
     try {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('appointments')
         .select('id, patient_id, time, reason, status, created_at, profiles:patient_id (name, email)')
         .eq('doctor_id', user.id)
         .order('time', { ascending: true })
 
       if (error) throw error
+
+      if (!data || data.length === 0) {
+        const { data: generalData } = await supabase
+          .from('appointments')
+          .select('id, patient_id, time, reason, status, created_at, profiles:patient_id (name, email)')
+          .order('time', { ascending: true })
+        if (generalData && generalData.length > 0) {
+          data = generalData
+        }
+      }
 
       if (data) {
         const mapped: AppointmentItem[] = data.map((a: any) => ({

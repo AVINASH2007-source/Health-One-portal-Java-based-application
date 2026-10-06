@@ -271,13 +271,20 @@ export default function PatientAppointments() {
               <select
                 value={selectedDoctorId}
                 onChange={(e) => setSelectedDoctorId(e.target.value)}
-                className="w-full rounded-xl border border-edge bg-panel2 p-2.5 text-xs text-ink focus:border-vital focus:outline-none"
+                disabled={doctors.length === 0}
+                className="w-full rounded-xl border border-edge bg-panel2 p-2.5 text-xs text-ink focus:border-vital focus:outline-none disabled:opacity-60"
               >
-                {doctors.map((doc) => (
-                  <option key={doc.id} value={doc.id}>
-                    {doc.full_name} {doc.specialty ? `— ${doc.specialty}` : ''}
-                  </option>
-                ))}
+                {loading ? (
+                  <option value="">Loading registered doctors...</option>
+                ) : doctors.length === 0 ? (
+                  <option value="">No registered doctors available — sign up as a doctor to test</option>
+                ) : (
+                  doctors.map((doc) => (
+                    <option key={doc.id} value={doc.id}>
+                      {doc.full_name} — {doc.specialty || 'General Practitioner'}
+                    </option>
+                  ))
+                )}
               </select>
             </div>
 

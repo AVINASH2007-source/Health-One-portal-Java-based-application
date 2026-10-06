@@ -72,6 +72,10 @@ export default function Medications() {
 
   useEffect(() => {
     fetchMedications()
+
+    const handleUpdate = () => fetchMedications()
+    window.addEventListener('health-one-data-updated', handleUpdate)
+    return () => window.removeEventListener('health-one-data-updated', handleUpdate)
   }, [session?.user?.id])
 
   const todayISO = new Date().toISOString().split('T')[0]

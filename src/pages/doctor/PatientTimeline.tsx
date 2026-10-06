@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { Stethoscope, FlaskConical, Pill, Syringe, Activity, FileText, UserCheck, Upload, Calendar, Lock, ShieldCheck, User, Plus, Sparkles } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Stethoscope, FlaskConical, Pill, Syringe, Activity, FileText, UserCheck, Upload, Calendar, Lock, ShieldCheck, User, Plus, Sparkles, AlertTriangle, Loader2, X, Check } from 'lucide-react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import Card from '../../components/ui/Card'
 import Skeleton from '../../components/ui/Skeleton'
 import { useAuth } from '../../lib/AuthContext'
 import { supabase } from '../../lib/supabase'
+import { generateDoctorClinicalSummary, ClinicalAISummaryResult } from '../../lib/gemini'
 
 type PatientOption = {
   id: string
@@ -56,6 +57,11 @@ export default function DoctorPatientTimeline() {
   const [records, setRecords] = useState<MedicalRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [hasAccess, setHasAccess] = useState<boolean | null>(null)
+
+  // AI Summary Modal State
+  const [aiModalOpen, setAiModalOpen] = useState(false)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiSummaryData, setAiSummaryData] = useState<ClinicalAISummaryResult | null>(null)
 
   // 1. Fetch available patients list
   useEffect(() => {
@@ -161,6 +167,63 @@ export default function DoctorPatientTimeline() {
     }
   }
 
+  const runAiSummary = async () => {
+    if (!selectedPatientId) return
+    setAiModalOpen(true)
+    setAiLoading(true)
+
+    try {
+      // 1. Fetch patient's active medications
+      const { data: meds } = await supabase
+        .from('medications')
+        .select('name, dosage, frequency, duration, source')
+        .eq('patient_id', selectedPatientId)
+
+      // 2. Fetch emergency card data (blood group, allergies, conditions)
+      const { data: ec } = await supabase
+        .from('emergency_cards')
+        .select('blood_type, allergies, conditions')
+        .eq('patient_id', selectedPatientId)
+        .maybeSingle()
+
+      // 3. Call AI Clinical Synthesis (Groq LPU / Gemini Flash)
+      const res = await generateDoctorClinicalSummary({
+        patientName: selectedPatientName,
+        records: records.map(r => ({
+          title: r.title,
+          record_type: r.record_type,
+          description: r.description || '',
+          occurred_at: r.occurred_at,
+        })),
+        medications: (meds || []).map(m => ({
+          name: m.name,
+          dosage: m.dosage || '',
+          frequency: m.frequency || '',
+          duration: m.duration || '',
+          source: m.source || ''
+        })),
+        emergencyCard: ec ? {
+          blood_type: ec.blood_type,
+          allergies: ec.allergies,
+          conditions: ec.conditions,
+        } : undefined,
+      })
+
+      setAiSummaryData(res)
+    } catch (err) {
+      console.error('Failed to run clinical AI summary:', err)
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  // Auto-trigger if navigated with ?ai=true query parameter
+  useEffect(() => {
+    if (searchParams.get('ai') === 'true' && selectedPatientId && records.length > 0 && !aiModalOpen) {
+      runAiSummary()
+    }
+  }, [searchParams, selectedPatientId, records.length])
+
   // Group records by month & year
   const groupedRecords = records.reduce((acc, rec) => {
     const yearMonth = rec.occurred_at
@@ -236,10 +299,10 @@ export default function DoctorPatientTimeline() {
               </button>
 
               <button
-                onClick={() => navigate(`/doctor/ai-summary?patientId=${selectedPatientId}`)}
-                className="flex items-center gap-1.5 rounded-xl bg-ai px-3 py-1.5 text-xs font-semibold text-white shadow-glow-ai hover:bg-ai/90 transition-all"
+                onClick={runAiSummary}
+                className="flex items-center gap-1.5 rounded-xl bg-ai px-3 py-1.5 text-xs font-semibold text-white shadow-glow-ai hover:bg-ai/90 transition-all cursor-pointer"
               >
-                <Sparkles size={14} /> AI Summary
+                <Sparkles size={14} /> AI Clinical Brief
               </button>
             </div>
           </div>
@@ -327,6 +390,120 @@ export default function DoctorPatientTimeline() {
           )}
         </div>
       )}
+
+      {/* Clinical AI Summary Modal */}
+      <AnimatePresence>
+        {aiModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+            onClick={() => setAiModalOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-edge bg-cardsurface p-6 shadow-card-lg sm:p-8"
+            >
+              <div className="flex items-center justify-between border-b border-edge/80 pb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="grid h-10 w-10 place-items-center rounded-xl bg-ai/10 text-ai">
+                    <Sparkles size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-display text-lg font-semibold text-ink">
+                      AI Clinical Diagnostic Brief
+                    </h3>
+                    <p className="text-xs text-mist">
+                      Patient: <span className="font-medium text-ink">{selectedPatientName}</span> · Multi-LLM Analysis (Groq & Gemini)
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setAiModalOpen(false)}
+                  className="rounded-lg p-1.5 text-mist hover:bg-panel2 hover:text-ink transition-colors cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {aiLoading ? (
+                <div className="py-12 text-center space-y-3">
+                  <Loader2 size={32} className="mx-auto animate-spin text-ai" />
+                  <p className="text-sm font-medium text-ink">Analyzing medical history & drug interactions...</p>
+                  <p className="text-xs text-mist">Synthesizing clinical notes, lab reports, and allergy profiles.</p>
+                </div>
+              ) : aiSummaryData ? (
+                <div className="mt-5 space-y-5">
+                  {/* Clinical Synthesis */}
+                  <div className="rounded-2xl border border-edge/80 bg-panel2/60 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-mist mb-1">
+                      Clinical Status Overview
+                    </p>
+                    <p className="text-sm text-ink leading-relaxed">{aiSummaryData.summary}</p>
+                  </div>
+
+                  {/* Drug Interactions & Contraindication Warnings */}
+                  {aiSummaryData.warnings && aiSummaryData.warnings.length > 0 && (
+                    <div className="rounded-2xl border border-emergency/30 bg-emergency-soft/70 p-4 space-y-2">
+                      <div className="flex items-center gap-2 text-emergency text-xs font-semibold uppercase tracking-wider">
+                        <AlertTriangle size={15} />
+                        <span>Contraindication & Allergy Warnings</span>
+                      </div>
+                      <ul className="space-y-1 text-xs text-ink">
+                        {aiSummaryData.warnings.map((w, idx) => (
+                          <li key={idx} className="flex items-start gap-2">
+                            <span className="text-emergency font-bold mt-0.5">•</span>
+                            <span>{w}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Key Observations */}
+                  {aiSummaryData.keyObservations && aiSummaryData.keyObservations.length > 0 && (
+                    <div className="rounded-2xl border border-edge/80 bg-cardsurface p-4 space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-mist">
+                        Key Clinical Observations & Metrics
+                      </p>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {aiSummaryData.keyObservations.map((obs, idx) => (
+                          <div key={idx} className="rounded-xl border border-edge/60 bg-panel2/40 p-2.5 text-xs text-ink">
+                            {obs}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action Bar */}
+                  <div className="flex items-center justify-end gap-3 pt-3 border-t border-edge/60">
+                    <button
+                      onClick={() => setAiModalOpen(false)}
+                      className="rounded-xl border border-edge bg-panel2 px-4 py-2 text-xs font-medium text-ink hover:bg-edge/40 transition-colors cursor-pointer"
+                    >
+                      Close
+                    </button>
+                    <button
+                      onClick={() => {
+                        setAiModalOpen(false)
+                        navigate(`/doctor/new-entry?patientId=${selectedPatientId}`)
+                      }}
+                      className="flex items-center gap-1.5 rounded-xl bg-vital px-4 py-2 text-xs font-semibold text-white shadow-glow hover:bg-vital/90 transition-all cursor-pointer"
+                    >
+                      <Plus size={14} /> Add Clinical Note / Rx
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

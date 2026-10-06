@@ -285,10 +285,10 @@ export default function Landing() {
           className="mb-8 text-center"
         >
           <h2 className="font-display text-2xl font-semibold text-white sm:text-3xl">Built for every side of care</h2>
-          <p className="mt-2 text-sm text-body">Patients, doctors, and hospitals each get a dedicated, role-aware portal.</p>
+          <p className="mt-2 text-sm text-body">Patients and doctors each get a dedicated, role-aware portal.</p>
         </motion.div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 max-w-2xl mx-auto">
           {roleThemes.map((r, i) => (
             <motion.button
               key={r.key}

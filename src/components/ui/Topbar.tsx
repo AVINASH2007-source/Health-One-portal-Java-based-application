@@ -17,6 +17,9 @@ import {
   FileText,
   Clock,
   Check,
+  Trash2,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react'
 import { Role } from '../../lib/navConfig'
 import { getRoleTheme } from '../../lib/roleTheme'
@@ -41,11 +44,13 @@ export default function Topbar({
   onMenuToggle?: () => void
 }) {
   const navigate = useNavigate()
-  const { user, profile, name, logout } = useAuth()
+  const { user, profile, name, logout, deleteAccount } = useAuth()
   const theme = getRoleTheme(role)
 
   const [showNotifications, setShowNotifications] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
 
@@ -571,6 +576,16 @@ export default function Topbar({
                 >
                   <LogOut size={14} /> Log Out
                 </button>
+
+                <button
+                  onClick={() => {
+                    setShowProfile(false)
+                    setShowDeleteConfirm(true)
+                  }}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 py-2 text-xs font-semibold text-red-600 hover:bg-red-500/20 transition-all cursor-pointer"
+                >
+                  <Trash2 size={14} /> Delete Account
+                </button>
               </div>
             </motion.div>
           )}
@@ -588,6 +603,61 @@ export default function Topbar({
       >
         <LogOut size={15} />
       </button>
+
+      {/* Delete Account Modal Confirmation */}
+      <AnimatePresence>
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-void/80 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md rounded-2xl border border-edge bg-panel p-6 shadow-2xl space-y-4"
+            >
+              <div className="flex items-center gap-3 text-red-600">
+                <div className="grid h-10 w-10 place-items-center rounded-xl bg-red-500/10 shrink-0">
+                  <AlertCircle size={22} />
+                </div>
+                <div>
+                  <h3 className="font-display text-base font-bold text-ink">Delete Account Permanently?</h3>
+                  <p className="text-xs text-mist">This action cannot be undone.</p>
+                </div>
+              </div>
+
+              <p className="text-xs text-mist leading-relaxed bg-panel2 p-3 rounded-xl border border-edge">
+                Deleting your account will remove your profile, medical records, and preferences from the Health-One database.
+              </p>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  disabled={deleting}
+                  className="rounded-xl border border-edge bg-panel2 px-4 py-2 text-xs font-medium text-ink hover:bg-edge/40 cursor-pointer disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  onClick={async () => {
+                    setDeleting(true)
+                    const res = await deleteAccount()
+                    setDeleting(false)
+                    setShowDeleteConfirm(false)
+                    if (!res.error) {
+                      navigate('/')
+                    }
+                  }}
+                  disabled={deleting}
+                  className="flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white shadow-md hover:bg-red-700 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                  {deleting ? 'Deleting...' : 'Delete My Account'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </header>
   )
 }

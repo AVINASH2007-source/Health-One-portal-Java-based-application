@@ -324,6 +324,10 @@ export default function Records() {
 
   useEffect(() => {
     loadData()
+
+    const handleUpdate = () => loadData()
+    window.addEventListener('health-one-data-updated', handleUpdate)
+    return () => window.removeEventListener('health-one-data-updated', handleUpdate)
   }, [patientId])
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -444,7 +448,7 @@ export default function Records() {
           <div>
             <p className="font-semibold">{successMsg}</p>
             <p className="text-[11px] text-mist mt-0.5">
-              Tesseract OCR parsed vitals, medications & health events — Overview Vitals, Timeline, and Analytics have been updated in real-time.
+              AI & OCR extracted medications, diagnosed diseases, allergy alerts & vitals — Overview, Timeline, Emergency Card, and Health Analytics updated in real time.
             </p>
           </div>
         </motion.div>

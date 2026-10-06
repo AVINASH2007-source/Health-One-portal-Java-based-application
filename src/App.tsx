@@ -24,10 +24,6 @@ import DoctorAppointments from './pages/doctor/Appointments'
 import DoctorPatientTimeline from './pages/doctor/PatientTimeline'
 import DoctorNewEntry from './pages/doctor/NewEntry'
 import DoctorEmergencyLog from './pages/doctor/EmergencyLog'
-import HospitalHome from './pages/hospital/HospitalHome'
-import DoctorManagement from './pages/hospital/DoctorManagement'
-import Departments from './pages/hospital/Departments'
-import AuditLogs from './pages/hospital/AuditLogs'
 
 const overrides: Partial<Record<string, JSX.Element>> = {
   '/patient': <PatientOverview />,
@@ -42,10 +38,6 @@ const overrides: Partial<Record<string, JSX.Element>> = {
   '/doctor/patient-timeline': <DoctorPatientTimeline />,
   '/doctor/new-entry': <DoctorNewEntry />,
   '/doctor/emergency-log': <DoctorEmergencyLog />,
-  '/hospital': <HospitalHome />,
-  '/hospital/doctors': <DoctorManagement />,
-  '/hospital/departments': <Departments />,
-  '/hospital/audit-logs': <AuditLogs />,
 }
 
 function roleRoutes(role: Role) {
@@ -74,8 +66,9 @@ export default function App() {
       <VideoBackground src="/media/hero-bg.mp4" poster="/media/hero-bg-poster.jpg" />
       <Routes>
         <Route path="/" element={<Landing />} />
-        <Route path="/login" element={<RoleSelect />} />
+        <Route path="/login" element={<Login />} />
         <Route path="/login/:role" element={<Login />} />
+        <Route path="/select-role" element={<RoleSelect />} />
         <Route path="/emergency/:patientId" element={<EmergencyAccess />} />
 
         <Route
@@ -89,12 +82,6 @@ export default function App() {
           element={<ProtectedRoute role="doctor"><DashboardLayout role="doctor" /></ProtectedRoute>}
         >
           {roleRoutes('doctor')}
-        </Route>
-        <Route
-          path="/hospital"
-          element={<ProtectedRoute role="hospital"><DashboardLayout role="hospital" /></ProtectedRoute>}
-        >
-          {roleRoutes('hospital')}
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />

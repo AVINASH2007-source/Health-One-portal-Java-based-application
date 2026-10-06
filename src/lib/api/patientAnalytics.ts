@@ -21,6 +21,7 @@ export interface HealthAnalyticsSummary {
   totalRecordsCount: number
   activeMedicationsCount: number
   activeConditionsCount: number
+  allergiesCount: number
   avgSystolic: number
   avgDiastolic: number
   avgHeartRate: number
@@ -28,6 +29,8 @@ export interface HealthAnalyticsSummary {
   monthlyTrends: MonthTrend[]
   categoryDistribution: CategoryDistribution[]
   recentTitles: string[]
+  conditionsList: Array<{ id: string; name: string; status: string }>
+  allergiesList: Array<{ id: string; allergen: string; severity: string; category: string }>
 }
 
 export async function getHealthAnalyticsSummary(patientId: string): Promise<HealthAnalyticsSummary> {
@@ -40,6 +43,7 @@ export async function getHealthAnalyticsSummary(patientId: string): Promise<Heal
     { data: vaccinations },
     { data: surgeries },
     { data: diseases },
+    { data: allergies },
   ] = await Promise.all([
     supabase
       .from('vitals')
@@ -53,7 +57,8 @@ export async function getHealthAnalyticsSummary(patientId: string): Promise<Heal
     supabase.from('lab_reports').select('id, report_date, report_type').eq('patient_id', patientId),
     supabase.from('vaccinations').select('id, administered_date, vaccine_name').eq('patient_id', patientId),
     supabase.from('surgeries').select('id, surgery_date, surgery_type').eq('patient_id', patientId),
-    supabase.from('diseases').select('id, status').eq('patient_id', patientId).eq('status', 'active'),
+    supabase.from('diseases').select('id, condition_name, status').eq('patient_id', patientId),
+    supabase.from('allergies').select('id, allergen, severity, category').eq('patient_id', patientId),
   ])
 
   const fetchedVitals = vitals || []
@@ -64,6 +69,7 @@ export async function getHealthAnalyticsSummary(patientId: string): Promise<Heal
   const fetchedVacs = vaccinations || []
   const fetchedSurgs = surgeries || []
   const fetchedDiseases = diseases || []
+  const fetchedAllergies = allergies || []
 
   // Vitals Trend & Averages
   const vitalsTrend: VitalsTrendPoint[] = fetchedVitals.map((v) => {
@@ -139,10 +145,24 @@ export async function getHealthAnalyticsSummary(patientId: string): Promise<Heal
     ...fetchedSurgs.map((s) => s.surgery_type),
   ].filter((t): t is string => Boolean(t)).slice(0, 5)
 
+  const conditionsList = fetchedDiseases.map((d) => ({
+    id: d.id,
+    name: d.condition_name || 'Condition',
+    status: d.status || 'active',
+  }))
+
+  const allergiesList = fetchedAllergies.map((a) => ({
+    id: a.id,
+    allergen: a.allergen || 'Allergen',
+    severity: a.severity || 'moderate',
+    category: a.category || 'drug',
+  }))
+
   return {
     totalRecordsCount,
     activeMedicationsCount: fetchedMeds.length,
-    activeConditionsCount: fetchedDiseases.length,
+    activeConditionsCount: fetchedDiseases.filter((d) => d.status === 'active').length || fetchedDiseases.length,
+    allergiesCount: fetchedAllergies.length,
     avgSystolic,
     avgDiastolic,
     avgHeartRate,
@@ -150,5 +170,7 @@ export async function getHealthAnalyticsSummary(patientId: string): Promise<Heal
     monthlyTrends,
     categoryDistribution,
     recentTitles,
+    conditionsList,
+    allergiesList,
   }
 }

@@ -118,19 +118,25 @@ export async function getActiveMedications(patientId: string): Promise<Medicatio
 }
 
 export async function getUpcomingAppointments(patientId: string): Promise<Appointment[]> {
-  const { data, error } = await supabase
-    .from('appointments')
-    .select('*')
-    .eq('patient_id', patientId)
-    .eq('status', 'upcoming')
-    .order('time', { ascending: true })
-    .limit(3)
+  try {
+    const { data, error } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('patient_id', patientId)
+      .in('status', ['pending', 'scheduled', 'upcoming', 'confirmed'])
+      .order('created_at', { ascending: false })
+      .limit(3)
 
-  if (error) {
-    throw new Error(`Failed to fetch upcoming appointments: ${error.message}`)
+    if (error) {
+      console.warn('Failed to fetch upcoming appointments notice:', error.message)
+      return []
+    }
+
+    return (data as Appointment[]) || []
+  } catch (err) {
+    console.warn('Upcoming appointments exception notice:', err)
+    return []
   }
-
-  return (data as Appointment[]) || []
 }
 
 export async function getRecentTimeline(patientId: string): Promise<TimelineItem[]> {

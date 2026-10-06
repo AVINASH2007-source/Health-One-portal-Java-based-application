@@ -14,119 +14,69 @@ export interface Appointment {
   doctor_id: string
   doctor_name?: string
   specialization?: string
-  time: string // ISO string or timestamp
+  time: string // ISO string
   reason: string
   status: 'pending' | 'scheduled' | 'confirmed' | 'rejected' | 'declined' | 'cancelled' | 'completed' | string
   created_at?: string
 }
 
-export const FALLBACK_DOCTORS: DoctorProfile[] = [
-  {
-    id: 'doc-101',
-    full_name: 'Dr. R. Kumar',
-    specialty: 'Cardiology & Heart Health',
-    hospital_name: 'Apollo Hospitals, Chennai',
-  },
-  {
-    id: 'doc-102',
-    full_name: 'Dr. A. Iyer',
-    specialty: 'General Medicine & Internal Health',
-    hospital_name: 'Fortis Health Center, Chennai',
-  },
-  {
-    id: 'doc-103',
-    full_name: 'Dr. S. Ramesh',
-    specialty: 'Orthopedics & Joint Surgery',
-    hospital_name: 'MGM Healthcare, Chennai',
-  },
-  {
-    id: 'doc-104',
-    full_name: 'Dr. P. Sharma',
-    specialty: 'Endocrinology & Diabetes Care',
-    hospital_name: 'Apollo Specialty Clinic',
-  },
-  {
-    id: 'doc-105',
-    full_name: 'Dr. M. Swaminathan',
-    specialty: 'Neurology & Brain Health',
-    hospital_name: 'Kauvery Hospital, Chennai',
-  },
-]
-
-const LOCAL_KEY = 'healthone_patient_appointments_v2'
-
-function getLocalAppointments(): Appointment[] {
-  try {
-    const raw = localStorage.getItem(LOCAL_KEY)
-    if (raw) return JSON.parse(raw)
-  } catch (e) {
-    console.warn('Failed to parse local appointments:', e)
-  }
-
-  const in2Days = new Date(Date.now() + 86400000 * 2)
-  in2Days.setHours(10, 30, 0, 0)
-
-  const in4DaysAgo = new Date(Date.now() - 86400000 * 4)
-  in4DaysAgo.setHours(14, 0, 0, 0)
-
-  return [
-    {
-      id: 'apt-101',
-      patient_id: 'default-patient',
-      doctor_id: 'doc-101',
-      doctor_name: 'Dr. R. Kumar',
-      specialization: 'Cardiology & Heart Health',
-      time: in2Days.toISOString(),
-      reason: 'Routine ECG review & blood pressure checkup',
-      status: 'pending',
-      created_at: new Date().toISOString(),
-    },
-    {
-      id: 'apt-102',
-      patient_id: 'default-patient',
-      doctor_id: 'doc-102',
-      doctor_name: 'Dr. A. Iyer',
-      specialization: 'General Medicine & Internal Health',
-      time: in4DaysAgo.toISOString(),
-      reason: 'Fasting blood glucose review and prescription renewal',
-      status: 'scheduled',
-      created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
-    },
-  ]
-}
-
-function saveLocalAppointments(appts: Appointment[]) {
-  try {
-    localStorage.setItem(LOCAL_KEY, JSON.stringify(appts))
-  } catch (e) {
-    console.warn('Failed to save local appointments:', e)
-  }
-}
-
-// 1. Query available doctors from profiles table where role = 'doctor'
+/**
+ * Fetches all registered users from public.profiles table who have role === 'doctor'
+ * Uses SECURITY DEFINER RPC get_public_doctors to bypass RLS policies cleanly,
+ * with automatic fallback to direct profiles table select query.
+ */
 export async function getAvailableDoctors(): Promise<DoctorProfile[]> {
   try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, full_name, specialty, role, hospital_name')
-      .eq('role', 'doctor')
+    let doctorRows: any[] = []
 
-    if (!error && data && data.length > 0) {
-      return data.map((d: any) => ({
-        id: d.id,
-        full_name: d.full_name || d.name || 'Doctor',
-        specialty: d.specialty || d.specialization || 'General Practitioner',
-        hospital_name: d.hospital_name || 'Health-One Hospital System',
-      }))
+    // 1. Try RPC get_public_doctors (Security Definer function bypasses RLS safely)
+    const { data: rpcData, error: rpcErr } = await supabase.rpc('get_public_doctors')
+
+    if (!rpcErr && rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
+      doctorRows = rpcData
+    } else {
+      if (rpcErr) {
+        console.warn('RPC get_public_doctors notice (RPC function may not be created in DB yet):', rpcErr.message)
+      }
+      // 2. Fallback to direct select from profiles table
+      const { data: selectData, error: selectErr } = await supabase
+        .from('profiles')
+        .select('id, name, email, specialty, role, hospital_id')
+
+      if (!selectErr && selectData) {
+        doctorRows = selectData.filter(
+          (p: any) => p.role && p.role.toString().toLowerCase() === 'doctor'
+        )
+      } else if (selectErr) {
+        console.warn('Direct profiles query error:', selectErr.message)
+      }
+    }
+
+    if (doctorRows && doctorRows.length > 0) {
+      return doctorRows.map((d: any) => {
+        const rawName = d.name || d.email?.split('@')[0] || 'Specialist'
+        const formattedName = rawName.toLowerCase().startsWith('dr.')
+          ? rawName
+          : `Dr. ${rawName}`
+
+        return {
+          id: d.id,
+          full_name: formattedName,
+          specialty: d.specialty || 'General Practitioner & Internal Medicine',
+          hospital_name: 'Health-One Medical Network',
+        }
+      })
     }
   } catch (e) {
-    console.warn('Supabase profiles doctor lookup notice, using fallback list:', e)
+    console.warn('Supabase profiles doctor lookup notice:', e)
   }
 
-  return FALLBACK_DOCTORS
+  return []
 }
 
-// 2. Query appointments for current patient where patient_id = user.id
+/**
+ * Queries all real appointments for the logged-in patient from Supabase appointments table
+ */
 export async function getPatientAppointments(patientId: string): Promise<Appointment[]> {
   try {
     const { data, error } = await supabase
@@ -139,32 +89,40 @@ export async function getPatientAppointments(patientId: string): Promise<Appoint
         reason,
         status,
         created_at,
-        profiles:doctor_id (full_name, specialty)
+        profiles:doctor_id (name, specialty)
       `)
       .eq('patient_id', patientId)
       .order('time', { ascending: false })
 
-    if (!error && data && data.length > 0) {
-      return data.map((item: any) => ({
-        id: item.id,
-        patient_id: item.patient_id,
-        doctor_id: item.doctor_id,
-        doctor_name: item.profiles?.full_name || 'Doctor',
-        specialization: item.profiles?.specialty || 'Medical Specialist',
-        time: item.time,
-        reason: item.reason,
-        status: item.status,
-        created_at: item.created_at,
-      }))
+    if (!error && data) {
+      return data.map((item: any) => {
+        const docName = item.profiles?.name
+          ? (item.profiles.name.toLowerCase().startsWith('dr.') ? item.profiles.name : `Dr. ${item.profiles.name}`)
+          : 'Attending Doctor'
+
+        return {
+          id: item.id,
+          patient_id: item.patient_id,
+          doctor_id: item.doctor_id,
+          doctor_name: docName,
+          specialization: item.profiles?.specialty || 'Medical Specialist',
+          time: item.time,
+          reason: item.reason,
+          status: item.status,
+          created_at: item.created_at,
+        }
+      })
     }
   } catch (e) {
-    console.warn('Supabase appointments fetch notice, using fallback storage:', e)
+    console.warn('Supabase appointments fetch notice:', e)
   }
 
-  return getLocalAppointments()
+  return []
 }
 
-// 3. Create appointment: insert into appointments: { patient_id: user.id, doctor_id, time, reason, status: 'pending' }
+/**
+ * Inserts a real appointment request into Supabase appointments table
+ */
 export async function createAppointmentRequest(
   patientId: string,
   payload: {
@@ -175,75 +133,50 @@ export async function createAppointmentRequest(
     reason: string
   }
 ): Promise<Appointment> {
-  const newAppt: Appointment = {
-    id: `apt-${Date.now()}`,
-    patient_id: patientId,
-    doctor_id: payload.doctor_id,
-    doctor_name: payload.doctor_name,
-    specialization: payload.specialization,
-    time: payload.time,
-    reason: payload.reason,
-    status: 'pending',
-    created_at: new Date().toISOString(),
+  const { data, error } = await supabase
+    .from('appointments')
+    .insert({
+      patient_id: patientId,
+      doctor_id: payload.doctor_id,
+      time: payload.time,
+      reason: payload.reason,
+      status: 'pending',
+    })
+    .select('*, profiles:doctor_id (name, specialty)')
+    .single()
+
+  if (error) {
+    throw new Error(`Failed to record appointment request: ${error.message}`)
   }
 
-  try {
-    const { data, error } = await supabase
-      .from('appointments')
-      .insert({
-        patient_id: patientId,
-        doctor_id: payload.doctor_id,
-        time: payload.time,
-        reason: payload.reason,
-        status: 'pending',
-      })
-      .select('*')
-      .single()
+  const docName = data.profiles?.name
+    ? (data.profiles.name.toLowerCase().startsWith('dr.') ? data.profiles.name : `Dr. ${data.profiles.name}`)
+    : payload.doctor_name
 
-    if (!error && data) {
-      const dbAppt: Appointment = {
-        ...newAppt,
-        id: data.id,
-        status: data.status || 'pending',
-      }
-      const current = getLocalAppointments()
-      saveLocalAppointments([dbAppt, ...current])
-      return dbAppt
-    } else if (error) {
-      console.warn('Supabase appointment insert notice, using local storage fallback:', error.message)
-    }
-  } catch (e) {
-    console.warn('Supabase appointment insert catch notice:', e)
+  return {
+    id: data.id,
+    patient_id: data.patient_id,
+    doctor_id: data.doctor_id,
+    doctor_name: docName,
+    specialization: data.profiles?.specialty || payload.specialization || 'Medical Specialist',
+    time: data.time,
+    reason: data.reason,
+    status: data.status || 'pending',
+    created_at: data.created_at,
   }
-
-  const current = getLocalAppointments()
-  const updated = [newAppt, ...current]
-  saveLocalAppointments(updated)
-
-  return newAppt
 }
 
-// 4. Update status to 'cancelled' (requires RLS policy: "appointments: patient update")
+/**
+ * Updates appointment status to 'cancelled'
+ */
 export async function updateAppointmentStatusToCancelled(patientId: string, appointmentId: string): Promise<void> {
-  let dbSuccess = false
-  try {
-    const { error } = await supabase
-      .from('appointments')
-      .update({ status: 'cancelled' })
-      .eq('id', appointmentId)
-      .eq('patient_id', patientId)
+  const { error } = await supabase
+    .from('appointments')
+    .update({ status: 'cancelled' })
+    .eq('id', appointmentId)
+    .eq('patient_id', patientId)
 
-    if (error) {
-      console.warn('Supabase appointment cancellation notice (Check RLS policy "appointments: patient update"):', error.message)
-    } else {
-      dbSuccess = true
-    }
-  } catch (e) {
-    console.warn('Supabase appointment cancellation catch notice:', e)
+  if (error) {
+    throw new Error(`Failed to cancel appointment: ${error.message}`)
   }
-
-  // Also update local storage state
-  const locals = getLocalAppointments()
-  const updated = locals.map((a) => (a.id === appointmentId ? { ...a, status: 'cancelled' } : a))
-  saveLocalAppointments(updated)
 }

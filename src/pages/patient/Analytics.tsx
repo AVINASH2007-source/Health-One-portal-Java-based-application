@@ -12,6 +12,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Heart,
+  ShieldAlert,
+  Stethoscope,
 } from 'lucide-react'
 import { ResponsiveContainer, AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts'
 import Card from '../../components/ui/Card'
@@ -48,12 +50,14 @@ export default function Analytics() {
         setData(summary)
         setLoading(false)
 
-        // Generate Gemini AI Insights
+        // Generate AI Insights with full clinical conditions & allergies context
         generateHealthInsight({
           patientName: name,
           recordsCount: summary.totalRecordsCount,
           activeMedsCount: summary.activeMedicationsCount,
           recentTitles: summary.recentTitles,
+          conditions: summary.conditionsList.map((c) => c.name),
+          allergies: summary.allergiesList.map((a) => a.allergen),
         }).then((insight) => {
           if (active) setAiInsightMessage(insight)
         })
@@ -67,8 +71,14 @@ export default function Analytics() {
 
     fetchAnalytics()
 
+    const handleSync = () => {
+      fetchAnalytics()
+    }
+    window.addEventListener('health-one-data-updated', handleSync)
+
     return () => {
       active = false
+      window.removeEventListener('health-one-data-updated', handleSync)
     }
   }, [session?.user?.id, name])
 
@@ -131,12 +141,12 @@ export default function Analytics() {
       </Card>
 
       {/* Summary KPI Row */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <StatCard
           icon={FileText}
-          label="Total Records Analyzed"
+          label="Total Records"
           value={data?.totalRecordsCount ?? 0}
-          trend="Aggregated medical history"
+          trend="Aggregated events"
           accent="vital"
           delay={0.05}
         />
@@ -149,13 +159,29 @@ export default function Analytics() {
           delay={0.1}
         />
         <StatCard
-          icon={Heart}
-          label="Avg Systolic Pressure"
-          value={data?.avgSystolic ?? 120}
-          suffix=" mmHg"
-          trend={`Diastolic avg: ${data?.avgDiastolic ?? 80} mmHg`}
-          accent="emergency"
+          icon={Stethoscope}
+          label="Chronic Conditions"
+          value={data?.activeConditionsCount ?? 0}
+          trend="Diagnosed & managed"
+          accent="vital"
           delay={0.15}
+        />
+        <StatCard
+          icon={ShieldAlert}
+          label="Documented Allergies"
+          value={data?.allergiesCount ?? 0}
+          trend="Safety flags on file"
+          accent="emergency"
+          delay={0.2}
+        />
+        <StatCard
+          icon={Heart}
+          label="Avg Blood Pressure"
+          value={data?.avgSystolic ?? 120}
+          suffix={`/${data?.avgDiastolic ?? 80}`}
+          trend="mmHg baseline"
+          accent="vital"
+          delay={0.25}
         />
       </div>
 
@@ -277,6 +303,117 @@ export default function Analytics() {
                     <Bar dataKey="count" fill="#818CF8" radius={[6, 6, 0, 0]} name="Count" />
                   </BarChart>
                 </ResponsiveContainer>
+              )}
+            </Card>
+          </div>
+
+          {/* Chronic Conditions & Allergies Longitudinal Tracker */}
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            {/* Chronic Conditions / Diseases */}
+            <Card delay={0.35} className="p-5" hover={false}>
+              <div className="mb-4 flex items-center justify-between border-b border-edge/60 pb-3">
+                <div className="flex items-center gap-2">
+                  <Stethoscope size={16} className="text-hospital" />
+                  <div>
+                    <p className="text-sm font-semibold text-ink">Diagnosed Diseases & Chronic Conditions</p>
+                    <p className="text-xs text-mist">Continuous medical management & clinical indications</p>
+                  </div>
+                </div>
+                <span className="rounded-full bg-hospital-soft px-2.5 py-0.5 text-xs font-semibold text-hospital">
+                  {data?.conditionsList?.length || 0} Total
+                </span>
+              </div>
+
+              {(!data?.conditionsList || data.conditionsList.length === 0) ? (
+                <div className="py-8 text-center text-xs text-mist">
+                  No chronic conditions or diagnoses currently documented.
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
+                  {data.conditionsList.map((cond) => (
+                    <div
+                      key={cond.id}
+                      className="flex items-center justify-between rounded-xl bg-panel2 p-3 border border-edge/60"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span className="h-2 w-2 rounded-full bg-hospital" />
+                        <div>
+                          <p className="text-sm font-medium text-ink">{cond.name}</p>
+                          <p className="text-[11px] text-mist capitalize">Status: {cond.status}</p>
+                        </div>
+                      </div>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${
+                          cond.status === 'active'
+                            ? 'bg-emergency-soft text-emergency border border-emergency/30'
+                            : 'bg-vital-soft text-vital border border-vital/30'
+                        }`}
+                      >
+                        {cond.status}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            {/* Documented Allergies & Adverse Reactions */}
+            <Card delay={0.4} className="p-5" hover={false}>
+              <div className="mb-4 flex items-center justify-between border-b border-edge/60 pb-3">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert size={16} className="text-emergency" />
+                  <div>
+                    <p className="text-sm font-semibold text-ink">Allergies & Adverse Reaction Alerts</p>
+                    <p className="text-xs text-mist">Emergency clinical flags & contraindications</p>
+                  </div>
+                </div>
+                <span className="rounded-full bg-emergency-soft px-2.5 py-0.5 text-xs font-semibold text-emergency">
+                  {data?.allergiesList?.length || 0} Alerts
+                </span>
+              </div>
+
+              {(!data?.allergiesList || data.allergiesList.length === 0) ? (
+                <div className="py-8 text-center text-xs text-mist">
+                  No drug or food allergies on file.
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
+                  {data.allergiesList.map((alg) => (
+                    <div
+                      key={alg.id}
+                      className="flex items-center justify-between rounded-xl bg-panel2 p-3 border border-edge/60"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className={`h-2 w-2 rounded-full ${
+                            alg.severity === 'severe'
+                              ? 'bg-emergency'
+                              : alg.severity === 'moderate'
+                              ? 'bg-amber-400'
+                              : 'bg-vital'
+                          }`}
+                        />
+                        <div>
+                          <p className="text-sm font-medium text-ink">{alg.allergen}</p>
+                          <p className="text-[11px] text-mist capitalize">
+                            Category: {alg.category} • Severity: {alg.severity}
+                          </p>
+                        </div>
+                      </div>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${
+                          alg.severity === 'severe'
+                            ? 'bg-emergency-soft text-emergency border border-emergency/30'
+                            : alg.severity === 'moderate'
+                            ? 'bg-amber-500/10 text-amber-600 border border-amber-500/30'
+                            : 'bg-vital-soft text-vital border border-vital/30'
+                        }`}
+                      >
+                        {alg.severity}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               )}
             </Card>
           </div>

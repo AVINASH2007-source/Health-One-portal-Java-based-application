@@ -66,11 +66,21 @@ export default function DoctorHome() {
         // 1. Fetch appointments for doctor
         let apptList: AppointmentItem[] = []
         if (doctorId) {
-          const { data: apptsData } = await supabase
+          let { data: apptsData } = await supabase
             .from('appointments')
             .select('id, patient_id, time, reason, status, profiles:patient_id (name)')
             .eq('doctor_id', doctorId)
             .order('time', { ascending: true })
+
+          // Clinic-wide fallback for demo if doctor has no specific appointments
+          if (!apptsData || apptsData.length === 0) {
+            const { data: generalAppts } = await supabase
+              .from('appointments')
+              .select('id, patient_id, time, reason, status, profiles:patient_id (name)')
+              .order('time', { ascending: true })
+              .limit(10)
+            apptsData = generalAppts
+          }
 
           if (apptsData && apptsData.length > 0) {
             apptList = apptsData.map((a: any) => ({
@@ -318,7 +328,7 @@ export default function DoctorHome() {
                       </button>
 
                       <button
-                        onClick={() => navigate(`/doctor/ai-summary?patientId=${patient.id}`)}
+                        onClick={() => navigate(`/doctor/patient-timeline?patientId=${patient.id}&ai=true`)}
                         className="flex items-center gap-1 rounded-lg border border-edge bg-cardsurface px-2.5 py-1.5 text-xs text-ink hover:border-ai/40"
                         title="Generate AI Summary"
                       >
@@ -372,7 +382,7 @@ export default function DoctorHome() {
                   initial={{ opacity: 0, x: -8 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.2 + i * 0.08 }}
-                  onClick={() => navigate(`/doctor/ai-summary?patientId=${a.patient_id}`)}
+                  onClick={() => navigate(`/doctor/patient-timeline?patientId=${a.patient_id}`)}
                   className="flex w-full items-center justify-between rounded-xl border border-edge bg-panel2 px-3 py-2.5 text-left hover:border-ai/30 transition-colors"
                 >
                   <div>

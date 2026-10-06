@@ -1,21 +1,40 @@
-import { useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
-import { HeartPulse, ArrowLeft } from 'lucide-react'
+import { HeartPulse, ArrowLeft, Loader2 } from 'lucide-react'
 import { roleThemes } from '../lib/roleTheme'
 import { useAuth } from '../lib/AuthContext'
+import { Role } from '../lib/navConfig'
+import { supabase } from '../lib/supabase'
 
 export default function RoleSelect() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
-  const { session, role: activeRole, loading } = useAuth()
+  const { session, user, profile, role: activeRole, loading, confirmUserRole } = useAuth()
   const mode = params.get('mode') === 'signup' ? 'signup' : 'signin'
+  const [selectingRole, setSelectingRole] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!loading && session && activeRole) {
+    if (!loading && session && activeRole && profile?.role_confirmed !== false) {
       navigate(`/${activeRole.toLowerCase()}`, { replace: true })
     }
-  }, [loading, session, activeRole, navigate])
+  }, [loading, session, activeRole, profile, navigate])
+
+  const handleSelectRole = async (selectedRole: Role) => {
+    if (session && user) {
+      setSelectingRole(selectedRole)
+      try {
+        await confirmUserRole(selectedRole)
+      } catch (err) {
+        console.error('Error confirming role:', err)
+      } finally {
+        setSelectingRole(null)
+        navigate(`/${selectedRole}`, { replace: true })
+      }
+    } else {
+      navigate(`/login/${selectedRole}?mode=${mode}`)
+    }
+  }
 
   return (
     <div className="relative min-h-screen px-6 py-10">
@@ -35,52 +54,48 @@ export default function RoleSelect() {
           </div>
           <div>
             <p className="font-display text-xl font-semibold text-ink">
-              {mode === 'signup' ? 'Create your Health-One account' : 'Sign in to Health-One'}
+              Select Your Portal Role
             </p>
-            <p className="text-sm text-mist">Choose the portal that matches your role.</p>
+            <p className="text-sm text-mist">Choose the portal role to complete your account setup.</p>
           </div>
         </motion.div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {roleThemes.map((role, i) => (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 max-w-2xl mx-auto">
+          {roleThemes.map((roleItem, i) => (
             <motion.button
-              key={role.key}
+              key={roleItem.key}
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.08, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
               whileHover={{ y: -5 }}
-              onClick={() => navigate(`/login/${role.key}?mode=${mode}`)}
-              className="group rounded-2xl border border-edge bg-cardsurface/90 p-6 text-left shadow-card transition-shadow hover:shadow-card-lg"
+              disabled={selectingRole !== null}
+              onClick={() => handleSelectRole(roleItem.key as Role)}
+              className="group rounded-2xl border border-edge bg-cardsurface/90 p-6 text-left shadow-card transition-shadow hover:shadow-card-lg disabled:opacity-50 cursor-pointer"
             >
               <div
                 className="grid h-12 w-12 place-items-center rounded-xl transition-transform group-hover:scale-105"
-                style={{ backgroundColor: `${role.accent}18` }}
+                style={{ backgroundColor: `${roleItem.accent}18` }}
               >
-                <role.icon size={22} style={{ color: role.accent }} />
+                {selectingRole === roleItem.key ? (
+                  <Loader2 size={22} className="animate-spin text-vital" />
+                ) : (
+                  <roleItem.icon size={22} style={{ color: roleItem.accent }} />
+                )}
               </div>
-              <p className="mt-4 font-display text-base font-semibold text-ink">{role.label}</p>
-              <p className="mt-1 text-xs leading-relaxed text-mist">{role.description}</p>
-              <p className="mt-3 text-xs font-medium" style={{ color: role.accent }}>
-                {mode === 'signup' ? 'Create account →' : 'Continue →'}
+              <p className="mt-4 font-display text-base font-semibold text-ink">{roleItem.label}</p>
+              <p className="mt-1 text-xs leading-relaxed text-mist">{roleItem.description}</p>
+              <p className="mt-3 text-xs font-medium" style={{ color: roleItem.accent }}>
+                Select {roleItem.label} →
               </p>
             </motion.button>
           ))}
         </div>
 
         <p className="mt-8 text-center text-sm text-mist">
-          {mode === 'signup' ? (
-            <>Already have an account?{' '}
-              <button onClick={() => navigate(`/login?mode=signin`)} className="font-medium text-vital hover:underline">
-                Sign in instead
-              </button>
-            </>
-          ) : (
-            <>New to Health-One?{' '}
-              <button onClick={() => navigate(`/login?mode=signup`)} className="font-medium text-vital hover:underline">
-                Create an account
-              </button>
-            </>
-          )}
+          Already have an account?{' '}
+          <button onClick={() => navigate(`/login?mode=signin`)} className="font-medium text-vital hover:underline cursor-pointer">
+            Sign in instead
+          </button>
         </p>
       </div>
     </div>

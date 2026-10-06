@@ -21,6 +21,8 @@ export default function Login() {
   const [params, setParams] = useSearchParams()
   const {
     session,
+    user,
+    profile,
     role: activeRole,
     loading,
     signInWithPassword,
@@ -42,13 +44,35 @@ export default function Login() {
           ? 'reset-password'
           : 'signin'
 
-  // If user is already authenticated, redirect directly to their role dashboard
+  // If user is already authenticated, check portal role matching
   useEffect(() => {
-    if (!loading && session && activeRole) {
-      navigate(`/${activeRole.toLowerCase()}`, { replace: true })
-    }
-  }, [loading, session, activeRole, navigate])
+    if (!loading && session) {
+      if (!activeRole || profile?.role_confirmed === false) {
+        navigate('/select-role', { replace: true })
+        return
+      }
 
+      const requestedPortal = roleKey?.toLowerCase() as Role | undefined
+      const actualRole = activeRole.toLowerCase() as Role
+
+      // Portal mismatch check (e.g. Patient logging into /login/doctor)
+      if (requestedPortal && requestedPortal !== actualRole) {
+        const actualCap = actualRole.charAt(0).toUpperCase() + actualRole.slice(1)
+        setFormError(
+          `This account is registered as a ${actualCap}. Redirecting you to your ${actualCap} portal...`
+        )
+
+        const timer = setTimeout(() => {
+          navigate(`/${actualRole}`, { replace: true })
+        }, 1800)
+        return () => clearTimeout(timer)
+      }
+
+      navigate(`/${actualRole}`, { replace: true })
+    }
+  }, [loading, session, activeRole, profile, roleKey, navigate])
+
+  const [signupRole, setSignupRole] = useState<Role>((roleKey as Role) || 'patient')
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -78,7 +102,11 @@ export default function Login() {
     setFormError(null)
     setFormSuccess(null)
     setGoogleLoading(true)
-    const { error } = await signInWithGoogle(role.key)
+
+    // Intended role captured from: 1) portal URL (/login/doctor), 2) selected signup role, or undefined
+    const targetRole = (roleKey as Role) || (mode === 'signup' ? signupRole : undefined)
+
+    const { error } = await signInWithGoogle(targetRole)
     if (error) {
       setFormError(error)
       setGoogleLoading(false)
@@ -154,7 +182,7 @@ export default function Login() {
         setFormError('Enter your full name.')
         return
       }
-      if (role.key === 'doctor' && (!medicalLicenseId.trim() || !specialty.trim())) {
+      if (signupRole === 'doctor' && (!medicalLicenseId.trim() || !specialty.trim())) {
         setFormError('Medical License ID and Specialty are required for Doctor registration.')
         return
       }
@@ -168,7 +196,7 @@ export default function Login() {
       }
 
       setSubmitting(true)
-      const res = await signUpWithPassword(email, password, fullName.trim(), role.key)
+      const res = await signUpWithPassword(email, password, fullName.trim(), signupRole)
 
       if (res.error) {
         setSubmitting(false)
@@ -177,7 +205,7 @@ export default function Login() {
       }
 
       // If doctor registration, insert credentials into doctors table
-      if (role.key === 'doctor') {
+      if (signupRole === 'doctor') {
         const { data: userData } = await supabase.auth.getUser()
         if (userData?.user?.id) {
           await supabase.from('doctors').upsert({
@@ -197,13 +225,14 @@ export default function Login() {
       }
 
       // Auto-signed in
-      navigate(`/${role.key}`)
+      navigate(`/${signupRole}`)
       return
     }
 
     // Mode: Signin
     setSubmitting(true)
-    const res = await signInWithPassword(email, password, role.key as Role)
+    const portalRole = (roleKey as Role) || undefined
+    const res = await signInWithPassword(email, password, portalRole)
     setSubmitting(false)
 
     if (res.error) {
@@ -215,8 +244,12 @@ export default function Login() {
     }
 
     // Role-validated login success
-    const targetRole = res.role || role.key
-    navigate(`/${targetRole.toLowerCase()}`)
+    const targetRole = res.role
+    if (targetRole) {
+      navigate(`/${targetRole.toLowerCase()}`)
+    } else {
+      navigate('/select-role')
+    }
   }
 
   return (
@@ -240,9 +273,19 @@ export default function Login() {
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
           className="relative flex-1 max-w-xl"
         >
-          <Link to="/login" className="mb-6 inline-flex items-center gap-2 text-sm text-mist hover:text-ink">
+          <button
+            type="button"
+            onClick={() => {
+              if (window.history.length > 2) {
+                navigate(-1)
+              } else {
+                navigate(`/select-role?mode=${mode}`)
+              }
+            }}
+            className="mb-6 inline-flex items-center gap-2 text-sm text-mist hover:text-ink cursor-pointer transition-colors"
+          >
             <ArrowLeft size={15} /> Choose a different portal
-          </Link>
+          </button>
 
           <div className="mb-6 flex items-center gap-3">
             <motion.div
@@ -291,6 +334,37 @@ export default function Login() {
           transition={{ duration: 0.5, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
           className="w-full max-w-md shrink-0 rounded-3xl border border-edge bg-cardsurface/90 p-8 shadow-card-lg lg:p-10"
         >
+          {/* Portal Switcher Tabs (Patient / Doctor) */}
+          <div className="relative mb-5 flex rounded-2xl border border-edge bg-panel2 p-1 text-xs">
+            {(['patient', 'doctor'] as Role[]).map((r) => {
+              const isSelected = (roleKey?.toLowerCase() === r) || (!roleKey && r === 'patient')
+              const theme = getRoleTheme(r)
+              return (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => {
+                    navigate(`/login/${r}?mode=${mode}`)
+                    setSignupRole(r)
+                  }}
+                  className={`relative z-10 flex flex-1 items-center justify-center gap-2 rounded-xl py-2 font-semibold transition-colors cursor-pointer ${
+                    isSelected ? 'text-ink' : 'text-mist hover:text-ink'
+                  }`}
+                >
+                  {isSelected && (
+                    <motion.div
+                      layoutId="portal-tab-pill"
+                      className="absolute inset-0 -z-10 rounded-xl bg-cardsurface shadow-sm border border-edge/60"
+                      transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                    />
+                  )}
+                  <theme.icon size={15} style={{ color: theme.accent }} />
+                  <span>{theme.label} Portal</span>
+                </button>
+              )
+            })}
+          </div>
+
           {/* Mode Switcher Pills */}
           {mode !== 'forgot-password' && mode !== 'reset-password' && (
             <div className="relative mb-6 flex rounded-xl border border-edge bg-panel2 p-1 text-sm">
@@ -357,18 +431,18 @@ export default function Login() {
               {/* Header Title */}
               <p className="font-display text-xl font-semibold text-ink">
                 {mode === 'signin'
-                  ? `Welcome back`
+                  ? `Welcome to Health-One`
                   : mode === 'signup'
-                    ? `Join as a ${role.short.toLowerCase()}`
+                    ? `Create your account`
                     : mode === 'forgot-password'
                       ? `Reset your password`
                       : `Enter new password`}
               </p>
               <p className="mt-1 text-sm text-mist">
                 {mode === 'signin'
-                  ? `Continue to your ${role.short.toLowerCase()} dashboard.`
+                  ? `Sign in with your email or Google to access your dashboard.`
                   : mode === 'signup'
-                    ? `Set up your ${role.short.toLowerCase()} account on Health-One.`
+                    ? `Select your portal role and set up your account.`
                     : mode === 'forgot-password'
                       ? `We'll send a password recovery link to your email.`
                       : `Type a new password for your account.`}
@@ -382,7 +456,7 @@ export default function Login() {
                     whileTap={{ scale: 0.98 }}
                     onClick={handleGoogle}
                     disabled={googleLoading || submitting}
-                    className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl border border-edge bg-cardsurface/90 py-3 text-sm font-medium text-ink shadow-sm hover:bg-panel2 disabled:opacity-60"
+                    className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl border border-edge bg-cardsurface/90 py-3 text-sm font-medium text-ink shadow-sm hover:bg-panel2 disabled:opacity-60 cursor-pointer"
                   >
                     {googleLoading ? <Loader2 size={17} className="animate-spin" /> : <GoogleIcon size={17} />}
                     Continue with Google
@@ -407,6 +481,28 @@ export default function Login() {
                   className="space-y-3 overflow-hidden"
                 >
                   {mode === 'signup' && (
+                    <div className="space-y-3 mb-2">
+                      <label className="text-xs font-semibold text-mist uppercase tracking-wider block">Choose Account Role</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(['patient', 'doctor'] as Role[]).map((r) => (
+                          <button
+                            key={r}
+                            type="button"
+                            onClick={() => setSignupRole(r)}
+                            className={`rounded-xl border py-2 px-1 text-center text-xs font-semibold capitalize transition-all cursor-pointer ${
+                              signupRole === r
+                                ? 'border-vital bg-vital-soft text-vital shadow-sm'
+                                : 'border-edge bg-panel2 text-mist hover:text-ink'
+                            }`}
+                          >
+                            {r}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {mode === 'signup' && (
                     <input
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
@@ -419,7 +515,7 @@ export default function Login() {
                     <input
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder={role.idLabel}
+                      placeholder="Email address"
                       type="email"
                       className="w-full rounded-xl border border-edge bg-panel2 px-4 py-3 text-sm text-ink placeholder:text-mist focus:outline-none focus:ring-2 focus:ring-vital/30"
                     />
@@ -446,7 +542,7 @@ export default function Login() {
                     </div>
                   )}
 
-                  {mode === 'signup' && role.key === 'doctor' && (
+                  {mode === 'signup' && signupRole === 'doctor' && (
                     <>
                       <input
                         value={medicalLicenseId}
@@ -513,10 +609,78 @@ export default function Login() {
                 </motion.div>
               </AnimatePresence>
 
+              {mode === 'signin' && (
+                <div className="mt-3.5 flex items-center justify-between gap-2 rounded-xl border border-edge/80 bg-panel2/60 p-2.5 text-xs">
+                  <span className="text-mist font-medium">Quick Demo:</span>
+                  <div className="flex gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigate('/login/patient?mode=signin')
+                        setEmail('patient@healthone.org')
+                        setPassword('password123')
+                        setFormError(null)
+                      }}
+                      className="rounded-lg border border-vital/30 bg-vital-soft/60 px-2.5 py-1 font-semibold text-vital transition-colors hover:bg-vital-soft"
+                    >
+                      Patient
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigate('/login/doctor?mode=signin')
+                        setEmail('doctor@healthone.org')
+                        setPassword('password123')
+                        setFormError(null)
+                      }}
+                      className="rounded-lg border border-doctor/30 bg-doctor-soft/60 px-2.5 py-1 font-semibold text-doctor transition-colors hover:bg-doctor-soft"
+                    >
+                      Doctor
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {formError && (
-                <p className="mt-3 rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-600 font-medium leading-relaxed">
-                  {formError}
-                </p>
+                <div className="mt-3 rounded-lg bg-red-500/10 p-3 text-xs text-red-600 font-medium leading-relaxed">
+                  <p>{formError}</p>
+                  {formError.includes('Doctor portal') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigate('/login/doctor?mode=signin')
+                        setFormError(null)
+                      }}
+                      className="mt-2 inline-flex items-center gap-1.5 font-semibold text-doctor underline hover:opacity-80"
+                    >
+                      Switch to Doctor Portal <ArrowRight size={13} />
+                    </button>
+                  )}
+                  {formError.includes('Patient portal') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigate('/login/patient?mode=signin')
+                        setFormError(null)
+                      }}
+                      className="mt-2 inline-flex items-center gap-1.5 font-semibold text-vital underline hover:opacity-80"
+                    >
+                      Switch to Patient Portal <ArrowRight size={13} />
+                    </button>
+                  )}
+                  {formError.toLowerCase().includes('invalid login credentials') && (
+                    <div className="mt-2 text-ink">
+                      <span>Don't have an account yet? </span>
+                      <button
+                        type="button"
+                        onClick={() => setMode('signup')}
+                        className="font-bold underline ml-1 hover:text-vital"
+                      >
+                        Create account
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
 
               {formSuccess && (

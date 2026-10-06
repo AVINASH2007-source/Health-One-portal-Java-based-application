@@ -1,4 +1,4 @@
-import { HeartPulse, Stethoscope, Building2 } from 'lucide-react'
+import { HeartPulse, Stethoscope } from 'lucide-react'
 import { Role } from './navConfig'
 
 export type RoleTheme = {
@@ -32,16 +32,6 @@ export const roleThemes: RoleTheme[] = [
     icon: Stethoscope,
     accent: '#3B82F6',
     idLabel: 'Email or medical license ID',
-  },
-  {
-    key: 'hospital',
-    label: 'Hospital',
-    short: 'Hospital',
-    tagline: "Run your hospital's digital records with confidence.",
-    description: 'Track admissions, departments, doctors, and audit every access to patient data.',
-    icon: Building2,
-    accent: '#38BDF8',
-    idLabel: 'Work email',
   },
 ]
 

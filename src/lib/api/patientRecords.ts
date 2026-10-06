@@ -1,6 +1,6 @@
 import { supabase } from '../supabase'
 import { Prescription } from './patientOverview'
-import { parseDocumentWithTesseract } from '../ocrParser'
+import { analyzeMedicalDocument } from '../gemini'
 
 export interface Allergy {
   id: string
@@ -348,12 +348,12 @@ export async function uploadPatientDocument(
     attachmentPath = await fileToDataUrl(file)
   }
 
-  // 2. Run Tesseract.js Open-Source OCR Analysis
+  // 2. Run OCR & AI Extraction (Tesseract.js + Groq/Gemini LLM)
   let aiData = null
   try {
-    aiData = await parseDocumentWithTesseract(file)
+    aiData = await analyzeMedicalDocument(file)
   } catch (ocrErr) {
-    console.warn('Tesseract OCR analysis notice:', ocrErr)
+    console.warn('Document AI analysis notice:', ocrErr)
   }
 
   // 3. Save Record Metadata into public.records
@@ -442,7 +442,6 @@ export async function uploadPatientDocument(
         .from('medications')
         .select('name')
         .eq('patient_id', patientId)
-        .eq('active', true)
 
       const existingNames = new Set(
         (existingMeds || []).map((m) => m.name.trim().toLowerCase())
@@ -458,7 +457,7 @@ export async function uploadPatientDocument(
             dosage: m.dosage,
             frequency: m.frequency,
             duration: m.duration || '30 days',
-            doctor_name: aiData?.doctor_name || 'Dr. R. Kumar',
+            doctor_name: aiData?.doctor_name || 'Dr. Attending Physician',
             start_date: new Date().toISOString().split('T')[0],
             status: 'active',
           })
@@ -472,6 +471,9 @@ export async function uploadPatientDocument(
             name: m.name,
             dose: m.dosage,
             frequency: m.frequency,
+            source: 'ai_extracted',
+            status: 'confirmed',
+            notes: m.notes || 'OpenFDA & OCR Parsed',
             active: true,
           })
           existingNames.add(cleanName)
@@ -480,6 +482,91 @@ export async function uploadPatientDocument(
     } catch (mErr) {
       console.warn('Medications deduplication sync notice:', mErr)
     }
+  }
+
+  // 7. Cross-Dashboard Sync: Insert extracted Conditions into public.diseases
+  if (aiData?.conditions && aiData.conditions.length > 0) {
+    try {
+      const { data: existingDiseases } = await supabase
+        .from('diseases')
+        .select('condition_name')
+        .eq('patient_id', patientId)
+
+      const existingCondNames = new Set(
+        (existingDiseases || []).map((d) => d.condition_name.trim().toLowerCase())
+      )
+
+      for (const cond of aiData.conditions) {
+        const cleanCond = cond.name.trim().toLowerCase()
+        if (!existingCondNames.has(cleanCond)) {
+          await supabase.from('diseases').insert({
+            patient_id: patientId,
+            condition_name: cond.name,
+            status: cond.status || 'active',
+            diagnosed_date: new Date().toISOString().split('T')[0],
+            notes: cond.notes || 'Extracted via AI & OCR document analysis',
+          })
+          existingCondNames.add(cleanCond)
+        }
+      }
+
+      // Sync emergency_cards conditions array
+      const allConditions = Array.from(existingCondNames).map(
+        c => c.charAt(0).toUpperCase() + c.slice(1)
+      )
+      await supabase.from('emergency_cards').upsert({
+        patient_id: patientId,
+        conditions: allConditions,
+        updated_at: new Date().toISOString(),
+      })
+    } catch (dErr) {
+      console.warn('Diseases sync notice:', dErr)
+    }
+  }
+
+  // 8. Cross-Dashboard Sync: Insert extracted Allergies into public.allergies & emergency_cards
+  if (aiData?.allergies && aiData.allergies.length > 0) {
+    try {
+      const { data: existingAllergies } = await supabase
+        .from('allergies')
+        .select('allergen')
+        .eq('patient_id', patientId)
+
+      const existingAllergens = new Set(
+        (existingAllergies || []).map((a) => a.allergen.trim().toLowerCase())
+      )
+
+      for (const alg of aiData.allergies) {
+        const cleanAllergen = alg.allergen.trim().toLowerCase()
+        if (!existingAllergens.has(cleanAllergen)) {
+          await supabase.from('allergies').insert({
+            patient_id: patientId,
+            allergen: alg.allergen,
+            category: alg.category || 'drug',
+            severity: alg.severity || 'moderate',
+            reaction_notes: alg.reaction_notes || 'Extracted via AI & OCR document analysis',
+          })
+          existingAllergens.add(cleanAllergen)
+        }
+      }
+
+      // Sync emergency_cards allergies array
+      const allAllergens = Array.from(existingAllergens).map(
+        a => a.charAt(0).toUpperCase() + a.slice(1)
+      )
+      await supabase.from('emergency_cards').upsert({
+        patient_id: patientId,
+        allergies: allAllergens,
+        updated_at: new Date().toISOString(),
+      })
+    } catch (aErr) {
+      console.warn('Allergies sync notice:', aErr)
+    }
+  }
+
+  // 9. Trigger global window event so all patient pages auto-refresh in real time
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('health-one-data-updated'))
   }
 
   return data as UploadedRecord
