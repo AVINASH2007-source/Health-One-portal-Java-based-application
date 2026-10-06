@@ -6,12 +6,10 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+    allowedHosts: true,
   },
   preview: {
     host: true,
-    allowedHosts: [
-      'health-one-portal-java-based-application.onrender.com',
-      '.onrender.com',
-    ],
+    allowedHosts: true,
   },
 })
