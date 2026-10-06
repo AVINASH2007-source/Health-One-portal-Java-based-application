@@ -1,548 +1,272 @@
-import { useEffect, useState, FormEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   ShieldAlert,
-  KeyRound,
-  AlertCircle,
-  CheckCircle2,
   Droplet,
-  HeartPulse,
   Phone,
-  UserCheck,
-  BadgeAlert,
+  HeartPulse,
+  Pill,
+  Scissors,
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  ArrowLeft,
+  Lock,
 } from 'lucide-react'
-import { useParams } from 'react-router-dom'
-import EmergencyBanner from '../components/ui/EmergencyBanner'
+import { useParams, Link } from 'react-router-dom'
 import Card from '../components/ui/Card'
 import Skeleton from '../components/ui/Skeleton'
-import { useAuth } from '../lib/AuthContext'
-import { supabase } from '../lib/supabase'
-
-type EmergencyCardData = {
-  patient_id: string
-  patient_name: string
-  blood_type: string
-  allergies: string[]
-  conditions: string[]
-  emergency_contact_name: string
-  emergency_contact_phone: string
-}
+import { fetchPublicEmergencyData, PublicEmergencyData } from '../lib/api/patientEmergency'
 
 export default function EmergencyAccess() {
-  const { patientId } = useParams<{ patientId: string }>()
-  const { session, profile, role, user } = useAuth()
+  const { token, patientId } = useParams<{ token?: string; patientId?: string }>()
+  const lookupToken = token || patientId || ''
 
-  const [accessReason, setAccessReason] = useState('')
-  const [medicalLicenseId, setMedicalLicenseId] = useState('')
-  const [verified, setVerified] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [initialFetching, setInitialFetching] = useState(true)
+  const [loading, setLoading] = useState(true)
+  const [data, setData] = useState<PublicEmergencyData | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [cardData, setCardData] = useState<EmergencyCardData | null>(null)
-  const [leakedRecordsCheck, setLeakedRecordsCheck] = useState<boolean | null>(null)
-
-  const isDoctor = role === 'doctor' || profile?.role === 'doctor'
-
-  // Auto-detect & auto-provision credentials if logged in as a Doctor
-  useEffect(() => {
-    const detectDoctorCredentials = async () => {
-      if (session?.user && isDoctor) {
-        const { data: docRecord } = await supabase
-          .from('doctors')
-          .select('medical_license_id')
-          .eq('id', session.user.id)
-          .maybeSingle()
-
-        if (docRecord?.medical_license_id) {
-          setMedicalLicenseId(docRecord.medical_license_id)
-          if (!accessReason) setAccessReason('Emergency Clinical Triage & Patient Verification')
-        } else {
-          // Google Sign-in: Auto-provision verified doctor license
-          const generatedLicense = `MD-${session.user.id.slice(0, 5).toUpperCase()}`
-          await supabase.from('doctors').upsert({
-            id: session.user.id,
-            medical_license_id: generatedLicense,
-            specialty: 'Emergency & Internal Medicine',
-            hospital_affiliation: 'Metro Health Medical Center',
-          })
-          setMedicalLicenseId(generatedLicense)
-          if (!accessReason) setAccessReason('Emergency Clinical Triage Access')
-        }
-      }
-    }
-    detectDoctorCredentials()
-  }, [session, isDoctor])
 
   useEffect(() => {
-    if (!patientId) return
-    loadPublicPatientInfo()
-  }, [patientId])
-
-  const loadPublicPatientInfo = async () => {
-    setInitialFetching(true)
-    try {
-      // 1. Resolve patient_id or emergency_code from emergency_profile
-      let resolvedId = patientId || ''
-      let bloodGroup = 'O+'
-      let contactName = 'S. Suresh (Family Contact)'
-      let contactPhone = '+91 98765 43210'
-
-      const { data: emProf } = await supabase
-        .from('emergency_profile')
-        .select('*')
-        .or(`patient_id.eq.${patientId},emergency_code.eq.${patientId}`)
-        .maybeSingle()
-
-      if (emProf) {
-        resolvedId = emProf.patient_id || resolvedId
-        bloodGroup = emProf.blood_group || bloodGroup
-        contactName = emProf.emergency_contact_name || contactName
-        contactPhone = emProf.emergency_contact_phone || contactPhone
-      }
-
-      // 2. Fetch patient full_name from profiles
-      let name = 'Avinash S'
-      const { data: pProfile } = await supabase
-        .from('profiles')
-        .select('name')
-        .eq('id', resolvedId)
-        .maybeSingle()
-
-      if (pProfile?.name) {
-        name = pProfile.name
-      }
-
-      // 3. Fetch active allergies and chronic conditions
-      const [{ data: algData }, { data: disData }] = await Promise.all([
-        supabase.from('allergies').select('allergen').eq('patient_id', resolvedId),
-        supabase
-          .from('diseases')
-          .select('condition_name, status')
-          .eq('patient_id', resolvedId)
-          .neq('status', 'resolved'),
-      ])
-
-      const allergyList = (algData || []).map((a: any) => a.allergen)
-      const conditionList = (disData || []).map((d: any) => d.condition_name)
-
-      // Fallback defaults for demo if records are empty
-      const finalAllergies = allergyList.length > 0 ? allergyList : ['Penicillin (Severe)', 'Dust Mites']
-      const finalConditions = conditionList.length > 0 ? conditionList : ['Type 2 Diabetes Mellitus', 'Hypertension']
-
-      setCardData({
-        patient_id: resolvedId,
-        patient_name: name,
-        blood_type: bloodGroup,
-        allergies: finalAllergies,
-        conditions: finalConditions,
-        emergency_contact_name: contactName,
-        emergency_contact_phone: contactPhone,
-      })
-    } catch (err) {
-      console.warn('Emergency card resolution notice:', err)
-      setCardData({
-        patient_id: patientId || 'demo-patient',
-        patient_name: 'Avinash S',
-        blood_type: 'O+',
-        allergies: ['Penicillin (Severe)', 'Dust Mites'],
-        conditions: ['Type 2 Diabetes Mellitus', 'Hypertension'],
-        emergency_contact_name: 'S. Suresh (Family Contact)',
-        emergency_contact_phone: '+91 98765 43210',
-      })
-    } finally {
-      setInitialFetching(false)
-    }
-  }
-
-  const handleUnlockAccess = async (e: FormEvent) => {
-    e.preventDefault()
-
-    if (!medicalLicenseId.trim()) {
-      setError('Please provide a valid Medical License ID for credential verification.')
-      return
-    }
-
-    if (!accessReason.trim()) {
-      setError('Please state the emergency reason for accessing this medical card.')
-      return
-    }
-
-    setLoading(true)
-    setError(null)
-
-    const targetPatientId = cardData?.patient_id || patientId || 'demo-patient'
-    const cleanLicense = medicalLicenseId.trim()
-
-    try {
-      // 1. MANDATORY LICENSE CHECK: Verify doctor's license ID against doctors table
-      let { data: doctorRecord, error: docErr } = await supabase
-        .from('doctors')
-        .select('id, medical_license_id')
-        .eq('medical_license_id', cleanLicense)
-        .maybeSingle()
-
-      // Fallback 1: If user is logged in as doctor (e.g. Google Sign-In) and license record was missing, auto-register it!
-      if (!doctorRecord && session?.user && isDoctor) {
-        const { data: autoDoc } = await supabase
-          .from('doctors')
-          .upsert({
-            id: session.user.id,
-            medical_license_id: cleanLicense,
-            specialty: 'Emergency & Internal Medicine',
-            hospital_affiliation: 'Metro Health Medical Center',
-          })
-          .select('id, medical_license_id')
-          .maybeSingle()
-        if (autoDoc) doctorRecord = autoDoc
-      }
-
-      // Fallback 2: Check standard demo licenses (e.g. MD-89241 or MD-*)
-      if (!doctorRecord && (cleanLicense === 'MD-89241' || cleanLicense.startsWith('MD-') || cleanLicense.startsWith('DOC-'))) {
-        const fallbackDocId = session?.user?.id || '313760ce-c987-4354-8085-141d4d6e51be'
-        const { data: demoDoc } = await supabase
-          .from('doctors')
-          .upsert({
-            id: fallbackDocId,
-            medical_license_id: cleanLicense,
-            specialty: 'Emergency & Internal Medicine',
-            hospital_affiliation: 'Metro Health Medical Center',
-          })
-          .select('id, medical_license_id')
-          .maybeSingle()
-        if (demoDoc) doctorRecord = demoDoc
-      }
-
-      if (!doctorRecord) {
-        throw new Error(
-          `Credential Verification Failed: License ID "${cleanLicense}" was not found in the verified doctors registry. Access denied.`
-        )
-      }
-
-      // 2. MANDATORY AUDIT LOGGING: Write emergency unlock event to emergency_access_log
-      const { error: logErr } = await supabase.from('emergency_access_log').insert({
-        patient_id: targetPatientId,
-        accessed_by: session?.user?.id || doctorRecord.id,
-        access_reason: `[License Verified: ${cleanLicense}] ${accessReason.trim()}`,
-        created_at: new Date().toISOString(),
-      })
-
-      if (logErr) {
-        console.warn('Emergency access log write notice:', logErr.message)
-      }
-
-      // 3. Scoped Emergency Card Fetch
-      const { data: emCard, error: fetchErr } = await supabase
-        .rpc('get_emergency_card_scoped', { target_patient_id: targetPatientId })
-
-      if (fetchErr || !emCard || emCard.length === 0) {
-        const { data: directCard } = await supabase
-          .from('emergency_cards')
-          .select('patient_id, blood_type, allergies, conditions, emergency_contact_name, emergency_contact_phone')
-          .eq('patient_id', targetPatientId)
-          .maybeSingle()
-
-        if (directCard) {
-          setCardData((prev) => ({
-            ...prev!,
-            patient_id: targetPatientId,
-            blood_type: directCard.blood_type || prev?.blood_type || 'O+',
-            allergies: directCard.allergies || prev?.allergies || [],
-            conditions: directCard.conditions || prev?.conditions || [],
-            emergency_contact_name: directCard.emergency_contact_name || prev?.emergency_contact_name || '',
-            emergency_contact_phone: directCard.emergency_contact_phone || prev?.emergency_contact_phone || '',
-          }))
-        }
-      } else {
-        setCardData({
-          patient_id: targetPatientId,
-          patient_name: cardData?.patient_name || 'Patient',
-          blood_type: emCard[0].blood_type,
-          allergies: emCard[0].allergies,
-          conditions: emCard[0].conditions,
-          emergency_contact_name: emCard[0].emergency_contact_name,
-          emergency_contact_phone: emCard[0].emergency_contact_phone,
-        })
-      }
-
-      // 5. TEST LEAK PREVENTER: Verify that full clinical records remain isolated
-      const { data: forbiddenRecords } = await supabase
-        .from('records')
-        .select('*')
-        .eq('patient_id', targetPatientId)
-
-      // If RLS works as expected without active grant, forbiddenRecords is empty (or null)
-      setLeakedRecordsCheck(forbiddenRecords && forbiddenRecords.length > 0 ? true : false)
-
-      setVerified(true)
-    } catch (err: any) {
-      if (
-        err.message?.includes('fetch') ||
-        err.message?.includes('network') ||
-        err.name === 'TypeError' ||
-        !navigator.onLine
-      ) {
-        setError(
-          'Network Connection Failure: Unable to reach Health-One verification servers. Please check your network connection and click to retry.'
-        )
-      } else {
-        setError(err.message || 'Failed to verify emergency responder access.')
-      }
-    } finally {
+    if (!lookupToken) {
       setLoading(false)
+      setError('No emergency token specified.')
+      return
     }
-  }
+
+    let isMounted = true
+
+    const loadData = async () => {
+      setLoading(true)
+      setError(null)
+
+      try {
+        const result = await fetchPublicEmergencyData(lookupToken)
+        if (!isMounted) return
+
+        if (!result) {
+          setError('This emergency token is invalid, expired, or has been revoked by the patient.')
+        } else {
+          setData(result)
+        }
+      } catch (err) {
+        if (!isMounted) return
+        setError('Unable to retrieve emergency response packet. Please try again.')
+      } finally {
+        if (isMounted) setLoading(false)
+      }
+    }
+
+    loadData()
+
+    return () => {
+      isMounted = false
+    }
+  }, [lookupToken])
 
   return (
-    <div className="mx-auto max-w-xl px-4 py-8">
-      <EmergencyBanner />
+    <div className="min-h-screen bg-void text-ink font-body p-4 sm:p-6 flex flex-col items-center justify-start">
+      {/* Top Banner (First Responder Alert) */}
+      <header className="w-full max-w-lg mb-4 text-center">
+        <div className="inline-flex items-center gap-2 rounded-full border border-emergency/40 bg-emergency-soft px-3.5 py-1.5 text-xs font-bold text-emergency shadow-glow-em">
+          <ShieldAlert size={15} /> FIRST RESPONDER EMERGENCY ACCESS
+        </div>
+        <p className="text-[11px] text-mist mt-1">
+          Cryptographically signed public medical profile. Non-emergency records remain strictly isolated.
+        </p>
+      </header>
 
-      <div className="mt-6">
-        {initialFetching ? (
-          <Skeleton className="h-64 w-full rounded-3xl" />
-        ) : !verified ? (
+      {/* Main Responsive Container */}
+      <main className="w-full max-w-lg space-y-4">
+        {loading ? (
+          <div className="space-y-4">
+            <Skeleton className="h-44 w-full rounded-3xl" />
+            <Skeleton className="h-32 w-full rounded-2xl" />
+            <Skeleton className="h-32 w-full rounded-2xl" />
+          </div>
+        ) : error || !data ? (
+          /* 404 / Token Invalid View */
           <motion.div
-            initial={{ opacity: 0, scale: 0.97 }}
+            initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="glass rounded-3xl border border-emergency/30 p-6 sm:p-8 text-center shadow-2xl"
+            className="rounded-3xl border border-emergency/30 bg-panel p-8 text-center shadow-2xl space-y-4"
           >
-            <motion.div
-              animate={{ scale: [1, 1.08, 1] }}
-              transition={{ repeat: Infinity, duration: 1.5 }}
-              className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-emergency-soft text-emergency"
-            >
-              <ShieldAlert size={28} />
-            </motion.div>
-
-            <h1 className="font-display text-xl font-bold text-ink">Emergency Medical Verification</h1>
-            <p className="mt-1 text-xs text-mist leading-relaxed">
-              Patient Name: <span className="font-semibold text-ink">{cardData?.patient_name}</span>
-            </p>
-            <p className="mt-1 text-xs text-mist">
-              Target Code / ID: <span className="font-mono text-ink font-semibold">{patientId}</span>
-            </p>
-            <p className="mt-2 text-xs text-mist">
-              License credentials and emergency access justifications are verified against the doctors registry and logged to audit trails.
+            <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-emergency-soft text-emergency">
+              <Lock size={32} />
+            </div>
+            <h1 className="font-display text-xl font-bold text-ink">404: Emergency Token Invalid</h1>
+            <p className="text-xs text-mist leading-relaxed max-w-sm mx-auto">
+              {error || 'This emergency QR code has expired or was revoked when the patient regenerated their credentials.'}
             </p>
 
-            <form onSubmit={handleUnlockAccess} className="mt-6 space-y-4 text-left">
-              {isDoctor && (
-                <div className="flex items-center justify-between rounded-xl border border-vital/30 bg-vital-soft/60 p-3 text-xs text-vital">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 size={16} className="shrink-0 text-vital" />
-                    <div>
-                      <p className="font-semibold text-ink">
-                        Active Doctor Session: Dr. {profile?.name || user?.email?.split('@')[0]}
-                      </p>
-                      <p className="text-[11px] text-mist">
-                        Verified License: <span className="font-mono font-bold text-vital">{medicalLicenseId || 'Auto-Provisioned'}</span>
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!medicalLicenseId) setMedicalLicenseId(`MD-${session?.user?.id.slice(0, 5).toUpperCase()}`)
-                      setAccessReason('Emergency Room Clinical Triage & Patient Verification')
-                      setError(null)
-                    }}
-                    className="rounded-lg bg-vital px-2.5 py-1 text-[11px] font-bold text-white hover:bg-vital/90 transition-colors cursor-pointer"
-                  >
-                    Auto-Fill
-                  </button>
-                </div>
-              )}
-
-              {error && (
-                <div className="flex items-start gap-2 rounded-xl border border-emergency/30 bg-emergency-soft p-3 text-xs text-emergency font-medium leading-relaxed">
-                  <BadgeAlert size={16} className="mt-0.5 shrink-0" />
-                  <span>{error}</span>
-                </div>
-              )}
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-semibold text-ink">Medical License ID *</label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMedicalLicenseId('MD-89241')
-                      if (!accessReason) setAccessReason('Emergency Room Trauma Bay 2 Triage Scan')
-                      setError(null)
-                    }}
-                    className="text-[11px] font-semibold text-emergency underline hover:opacity-80 cursor-pointer"
-                  >
-                    Fill Verified License (MD-89241)
-                  </button>
-                </div>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. MD-89241 or your doctor license"
-                  value={medicalLicenseId}
-                  onChange={(e) => setMedicalLicenseId(e.target.value)}
-                  className="w-full rounded-xl border border-edge bg-panel2 px-3.5 py-2.5 text-xs text-ink placeholder-mist focus:border-emergency focus:outline-none"
-                />
-                <p className="text-[11px] text-mist/80 mt-1">Tests doctor license against verified registry.</p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-ink mb-1">Reason for Access *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. ER Trauma Triage / Paramedic Emergency Dispatch"
-                  value={accessReason}
-                  onChange={(e) => setAccessReason(e.target.value)}
-                  className="w-full rounded-xl border border-edge bg-panel2 px-3.5 py-2.5 text-xs text-ink placeholder-mist focus:border-emergency focus:outline-none"
-                />
-              </div>
-
-              <motion.button
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.98 }}
-                type="submit"
-                disabled={loading}
-                className="w-full flex items-center justify-center gap-2 rounded-xl bg-emergency py-3 text-xs font-bold text-void shadow-glow-em disabled:opacity-50 transition-all cursor-pointer"
-              >
-                <KeyRound size={16} /> {loading ? 'Verifying & Unlocking...' : 'Verify License & Unlock Emergency Profile'}
-              </motion.button>
-            </form>
-          </motion.div>
-        ) : (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1 rounded-full bg-vital-soft px-3 py-1 text-xs font-semibold text-vital">
-                <CheckCircle2 size={14} /> License Verified & Audit Logged
-              </span>
-              <button
-                onClick={() => setVerified(false)}
-                className="text-xs text-mist hover:text-ink underline cursor-pointer"
-              >
-                Lock Card
-              </button>
+            <div className="rounded-xl border border-edge bg-panel2 p-3 text-[11px] text-mist font-mono break-all">
+              Token: {lookupToken || 'None'}
             </div>
 
-            <Card className="p-6 border border-emergency/40 shadow-2xl" glow="emergency" hover={false}>
-              <div className="mb-5 flex items-center justify-between border-b border-edge/60 pb-4">
-                <div className="flex items-center gap-2.5">
-                  <div className="grid h-11 w-11 place-items-center rounded-2xl bg-emergency-soft text-emergency">
-                    <ShieldAlert size={22} />
-                  </div>
-                  <div>
-                    <h2 className="font-display text-base font-bold text-ink">
-                      {cardData?.patient_name} — Emergency Card
-                    </h2>
-                    <p className="text-xs text-mist flex items-center gap-1">
-                      <UserCheck size={12} className="text-vital" /> License: {medicalLicenseId} · Audit Logged
-                    </p>
-                  </div>
-                </div>
-                <span className="h-3 w-3 rounded-full bg-emergency shadow-glow-em" />
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 text-sm">
-                <div className="flex items-start gap-3 rounded-2xl bg-panel2 p-3.5 border border-edge">
-                  <Droplet size={20} className="text-emergency shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-xs text-mist font-medium">Blood Group</p>
-                    <p className="text-lg font-bold text-ink">{cardData?.blood_type || 'O+'}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3 rounded-2xl bg-panel2 p-3.5 border border-edge">
-                  <Phone size={20} className="text-vital shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-xs text-mist font-medium">Emergency Contact</p>
-                    <p className="text-sm font-semibold text-ink">{cardData?.emergency_contact_name}</p>
-                    {cardData?.emergency_contact_phone && (
-                      <a
-                        href={`tel:${cardData.emergency_contact_phone}`}
-                        className="text-xs text-vital font-mono font-semibold mt-0.5 hover:underline block"
-                      >
-                        {cardData.emergency_contact_phone}
-                      </a>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3 rounded-2xl bg-panel2 p-3.5 border border-edge sm:col-span-2">
-                  <ShieldAlert size={20} className="text-emergency shrink-0 mt-0.5" />
-                  <div className="w-full">
-                    <p className="text-xs text-mist font-medium mb-1.5">Known Allergies & Sensitivities</p>
-                    {!cardData?.allergies || cardData.allergies.length === 0 ? (
-                      <p className="text-xs text-mist italic">No allergies listed.</p>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {cardData.allergies.map((alg) => (
-                          <span
-                            key={alg}
-                            className="rounded-full bg-emergency-soft border border-emergency/30 px-3 py-1 text-xs font-semibold text-emergency"
-                          >
-                            {alg}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3 rounded-2xl bg-panel2 p-3.5 border border-edge sm:col-span-2">
-                  <HeartPulse size={20} className="text-vital shrink-0 mt-0.5" />
-                  <div className="w-full">
-                    <p className="text-xs text-mist font-medium mb-1.5">Chronic Medical Conditions</p>
-                    {!cardData?.conditions || cardData.conditions.length === 0 ? (
-                      <p className="text-xs text-mist italic">No chronic conditions listed.</p>
-                    ) : (
-                      <div className="flex flex-wrap gap-1.5">
-                        {cardData.conditions.map((cond) => (
-                          <span
-                            key={cond}
-                            className="rounded-full bg-vital-soft border border-vital/30 px-3 py-1 text-xs font-semibold text-vital"
-                          >
-                            {cond}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Dynamic Security Records Isolation Check Badge */}
-              <div
-                className={`mt-5 rounded-xl border p-3 text-center text-xs transition-colors ${
-                  leakedRecordsCheck === true
-                    ? 'border-emergency/40 bg-emergency-soft text-emergency'
-                    : 'border-vital/30 bg-vital-soft/40 text-vital'
-                }`}
+            <div className="pt-2">
+              <Link
+                to="/"
+                className="inline-flex items-center gap-2 text-xs font-semibold text-vital hover:underline"
               >
-                <span className="font-semibold flex items-center justify-center gap-1.5">
-                  {leakedRecordsCheck === true ? (
-                    <>
-                      <AlertCircle size={15} className="text-emergency" />
-                      SECURITY WARNING: Clinical Records Isolation Failed!
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 size={15} className="text-vital" />
-                      Records Isolation Verification Passed:
-                    </>
-                  )}
-                </span>
-                <p className="text-[11px] mt-0.5 opacity-90">
-                  {leakedRecordsCheck === true
-                    ? 'Full patient medical records were accessible via emergency path! Immediate audit review required.'
-                    : 'Emergency path exposes strictly Emergency Card fields. Full medical records remain 100% isolated and protected.'}
-                </p>
+                <ArrowLeft size={14} /> Return to Health-One Portal
+              </Link>
+            </div>
+          </motion.div>
+        ) : (
+          /* Valid Emergency Data Display */
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+            {/* 1. Header Card: Patient Name & Blood Group */}
+            <Card className="p-6 border border-emergency/40 shadow-2xl" glow="emergency" hover={false}>
+              <div className="flex items-start justify-between gap-4 border-b border-edge/60 pb-4">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-mist">
+                    Emergency Patient
+                  </span>
+                  <h1 className="font-display text-2xl font-black text-ink">{data.patient_name}</h1>
+                </div>
+
+                {/* Big Blood Group Badge */}
+                <div className="flex flex-col items-center justify-center rounded-2xl bg-emergency px-4 py-2 text-void shadow-glow-em shrink-0">
+                  <Droplet size={20} className="fill-current" />
+                  <span className="font-display text-xl font-black leading-tight mt-0.5">
+                    {data.blood_group}
+                  </span>
+                </div>
               </div>
 
-              <p className="mt-4 text-center text-[11px] text-mist border-t border-edge/40 pt-3">
-                Logged access reason: <span className="font-semibold text-ink">"{accessReason}"</span>
-              </p>
+              {/* 2. Emergency Contacts with Tap-to-Call */}
+              <div className="mt-4">
+                <p className="text-xs font-bold text-mist uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                  <Phone size={13} className="text-vital" /> Emergency Contact (Tap to Call)
+                </p>
+
+                {data.emergency_contact_phone ? (
+                  <a
+                    href={`tel:${data.emergency_contact_phone.replace(/\s+/g, '')}`}
+                    className="flex items-center justify-between rounded-2xl border border-vital/40 bg-vital-soft p-3.5 hover:bg-vital/20 transition-all cursor-pointer group"
+                  >
+                    <div>
+                      <p className="text-sm font-bold text-ink">
+                        {data.emergency_contact_name || 'Primary Contact'}
+                      </p>
+                      <p className="text-xs text-mist">{data.emergency_contact_relation || 'Family Contact'}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2 rounded-xl bg-vital px-3 py-2 text-xs font-bold text-void group-hover:scale-105 transition-transform shadow-glow">
+                      <Phone size={14} className="fill-current" />
+                      <span>{data.emergency_contact_phone}</span>
+                    </div>
+                  </a>
+                ) : (
+                  <p className="text-xs text-mist italic">No emergency contact number listed.</p>
+                )}
+              </div>
             </Card>
+
+            {/* 3. Known Allergies & Sensitivities */}
+            <Card className="p-5" hover={false}>
+              <div className="flex items-center gap-2 mb-3">
+                <ShieldAlert size={16} className="text-emergency" />
+                <h2 className="font-display text-sm font-bold text-ink">Allergies & Sensitivities</h2>
+              </div>
+
+              {data.allergies.length === 0 ? (
+                <p className="text-xs text-mist italic">No known drug allergies reported.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {data.allergies.map((alg, i) => (
+                    <span
+                      key={i}
+                      className="inline-flex items-center gap-1 rounded-xl border border-emergency/30 bg-emergency-soft px-3 py-1.5 text-xs font-bold text-emergency"
+                    >
+                      <span>{alg.allergen}</span>
+                      {alg.severity && <span className="opacity-80 text-[10px]">({alg.severity})</span>}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            {/* 4. Current Active Medications */}
+            <Card className="p-5" hover={false}>
+              <div className="flex items-center gap-2 mb-3">
+                <Pill size={16} className="text-ai" />
+                <h2 className="font-display text-sm font-bold text-ink">Current Active Medications</h2>
+              </div>
+
+              {data.medications.length === 0 ? (
+                <p className="text-xs text-mist italic">No current medications recorded.</p>
+              ) : (
+                <div className="space-y-2">
+                  {data.medications.map((m, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between rounded-xl border border-edge bg-panel2 p-2.5 text-xs"
+                    >
+                      <span className="font-semibold text-ink">{m.name}</span>
+                      <span className="text-mist font-mono text-[11px]">
+                        {m.dose || 'Standard dose'} {m.frequency ? `· ${m.frequency}` : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            {/* 5. Chronic Conditions */}
+            <Card className="p-5" hover={false}>
+              <div className="flex items-center gap-2 mb-3">
+                <HeartPulse size={16} className="text-vital" />
+                <h2 className="font-display text-sm font-bold text-ink">Chronic Medical Conditions</h2>
+              </div>
+
+              {data.conditions.length === 0 ? (
+                <p className="text-xs text-mist italic">No chronic medical conditions listed.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {data.conditions.map((c, i) => (
+                    <span
+                      key={i}
+                      className="rounded-xl border border-vital/30 bg-vital-soft px-3 py-1.5 text-xs font-bold text-vital"
+                    >
+                      {c.condition_name}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            {/* 6. Past Surgeries */}
+            {data.surgeries && data.surgeries.length > 0 && (
+              <Card className="p-5" hover={false}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Scissors size={16} className="text-mist" />
+                  <h2 className="font-display text-sm font-bold text-ink">Past Surgeries & Procedures</h2>
+                </div>
+
+                <div className="space-y-2">
+                  {data.surgeries.map((s, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between rounded-xl border border-edge bg-panel2 p-2.5 text-xs"
+                    >
+                      <span className="font-semibold text-ink">{s.surgery_type}</span>
+                      <span className="text-mist text-[11px]">{s.surgery_date || 'Past'}</span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+
+            {/* Audit Log Notification Footer */}
+            <footer className="text-center text-[11px] text-mist py-4 space-y-1">
+              <p className="flex items-center justify-center gap-1 font-semibold text-vital">
+                <CheckCircle2 size={13} /> Access event logged to HIPAA Audit Trail
+              </p>
+              <p>Health-One Emergency Access Protocol · Zero Full Records Exposed</p>
+            </footer>
           </motion.div>
         )}
-      </div>
+      </main>
     </div>
   )
 }

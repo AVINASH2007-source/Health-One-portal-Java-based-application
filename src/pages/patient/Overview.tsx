@@ -397,8 +397,8 @@ export default function Overview() {
         </Card>
       </div>
 
-      {/* Upcoming Appointments & Recent Activity Timeline & Emergency Card Quick Access */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      {/* Upcoming Appointments & Recent Activity Timeline */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Upcoming Appointments Card */}
         <Card delay={0.4} className="p-5" hover={false}>
           <div className="mb-4 flex items-center justify-between">
@@ -494,31 +494,6 @@ export default function Overview() {
               ))}
             </div>
           )}
-        </Card>
-
-        {/* Emergency Card Quick Access */}
-        <Card delay={0.5} className="flex flex-col justify-between p-5" glow="emergency">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emergency-soft">
-                <ShieldAlert size={18} className="text-emergency" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-ink">Emergency Health Card</p>
-                <p className="text-xs text-mist">Instant life-critical info for first responders</p>
-              </div>
-            </div>
-            <p className="mt-4 text-xs text-mist leading-relaxed">
-              Keep your emergency contact, blood group, drug allergies, and medical conditions updated for response teams.
-            </p>
-          </div>
-
-          <button
-            onClick={() => navigate('/patient/emergency-card')}
-            className="mt-6 flex w-full items-center justify-center gap-1.5 rounded-xl bg-emergency px-4 py-2.5 text-xs font-semibold text-void hover:brightness-110 transition-all shadow-glow-em"
-          >
-            Manage Emergency Card <ChevronRight size={14} />
-          </button>
         </Card>
       </div>
     </div>

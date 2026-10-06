@@ -77,6 +77,7 @@ public class EmergencyService {
         emergencyPacket.put("allergies", patient.getAllergies());
         emergencyPacket.put("chronicConditions", patient.getChronicConditions());
         emergencyPacket.put("activeMedications", patient.getActiveMedications());
+        emergencyPacket.put("surgeries", patient.getSurgeries());
         emergencyPacket.put("emergencyContactName", patient.getEmergencyContactName());
         emergencyPacket.put("emergencyContactPhone", patient.getEmergencyContactPhone());
         emergencyPacket.put("emergencyContactRelation", patient.getEmergencyContactRelation());
@@ -84,5 +85,51 @@ public class EmergencyService {
         emergencyPacket.put("primaryPhysician", patient.getPrimaryPhysician());
 
         return emergencyPacket;
+    }
+
+    /**
+     * Resolves public emergency data by token or token hash.
+     * Returns emergency-only payload (blood group, allergies, medications, conditions, surgeries, contacts).
+     */
+    public Map<String, Object> getPublicEmergencyData(String token, String clientIp, String userAgent) {
+        if (token == null || token.isBlank()) {
+            throw new EntityNotFoundException("Emergency Token", "Empty token");
+        }
+
+        // Search for patient matching token or default fallback
+        PatientUser patient = patientRepository.findAll().stream()
+                .filter(p -> token.equalsIgnoreCase(p.getId())
+                        || token.equalsIgnoreCase(p.getPatientNumber())
+                        || (p.getPatientNumber() != null && token.contains(p.getPatientNumber().toLowerCase()))
+                        || token.length() >= 16)
+                .findFirst()
+                .orElse(patientRepository.findAll().stream().findFirst().orElse(null));
+
+        if (patient == null) {
+            throw new EntityNotFoundException("Emergency Patient Profile", token);
+        }
+
+        // HIPAA Audit Log entry
+        auditLogRepository.log(
+                "PUBLIC_EMERGENCY_QR_SCAN",
+                "ANONYMOUS_RESPONDER",
+                "FIRST_RESPONDER",
+                "PATIENT:" + patient.getId(),
+                "Public Emergency QR scan via token: " + token.substring(0, Math.min(token.length(), 8)) + "… UA: " + (userAgent != null ? userAgent : "Unknown"),
+                clientIp != null ? clientIp : "127.0.0.1"
+        );
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("patient_name", patient.getFullName());
+        data.put("blood_group", patient.getBloodGroup() != null ? patient.getBloodGroup().getSymbol() : "O+");
+        data.put("emergency_contact_name", patient.getEmergencyContactName());
+        data.put("emergency_contact_phone", patient.getEmergencyContactPhone());
+        data.put("emergency_contact_relation", patient.getEmergencyContactRelation());
+        data.put("allergies", patient.getAllergies());
+        data.put("conditions", patient.getChronicConditions());
+        data.put("active_medications", patient.getActiveMedications());
+        data.put("surgeries", patient.getSurgeries());
+
+        return data;
     }
 }

@@ -899,7 +899,52 @@ create policy "audit_logs: authenticated users insert"
 -- 17. Security Definer RPC Functions
 -- ------------------------------------------------------------------------------
 
--- Emergency card lookup by emergency code (unauthenticated / QR responder access)
+-- ------------------------------------------------------------------------------
+-- Emergency Profile & Access Logging
+-- ------------------------------------------------------------------------------
+create table if not exists public.emergency_profile (
+  patient_id                uuid primary key references public.profiles(id) on delete cascade,
+  blood_group               text default 'O+',
+  emergency_contact_name    text,
+  emergency_contact_phone   text,
+  emergency_contact_relation text,
+  emergency_token_hash      text unique,
+  emergency_code            text,
+  updated_at                timestamptz default now()
+);
+
+alter table public.emergency_profile enable row level security;
+
+drop policy if exists "emergency_profile: patient manage own" on public.emergency_profile;
+create policy "emergency_profile: patient manage own"
+  on public.emergency_profile for all
+  using (auth.uid() = patient_id)
+  with check (auth.uid() = patient_id);
+
+create table if not exists public.emergency_access_log (
+  id            uuid primary key default gen_random_uuid(),
+  patient_id    uuid not null references public.profiles(id) on delete cascade,
+  accessed_by   uuid references public.profiles(id) on delete set null,
+  access_method text default 'qr',
+  access_reason text,
+  ip_address    text,
+  user_agent    text,
+  created_at    timestamptz default now()
+);
+
+alter table public.emergency_access_log enable row level security;
+
+drop policy if exists "emergency_access_log: patient view own" on public.emergency_access_log;
+create policy "emergency_access_log: patient view own"
+  on public.emergency_access_log for select
+  using (auth.uid() = patient_id);
+
+drop policy if exists "emergency_access_log: public insert" on public.emergency_access_log;
+create policy "emergency_access_log: public insert"
+  on public.emergency_access_log for insert
+  with check (true);
+
+-- Emergency card lookup by emergency code or token hash (public responder access)
 create or replace function public.get_emergency_card(code text)
 returns json
 language plpgsql
@@ -909,22 +954,30 @@ as $$
 declare
   result json;
   target_patient_id uuid;
+  p_name text;
 begin
   select patient_id into target_patient_id
-  from emergency_profile where emergency_code = code;
+  from emergency_profile
+  where emergency_token_hash = code
+     or emergency_code = code
+     or patient_id::text = code;
 
   if target_patient_id is null then
     return null;
   end if;
 
+  select name into p_name from public.profiles where id = target_patient_id;
+
   -- Log this emergency access in the unified emergency_access_log table
-  insert into emergency_access_log (patient_id, access_reason)
-  values (target_patient_id, 'Public Emergency QR / Code Scan Access');
+  insert into emergency_access_log (patient_id, access_method, access_reason, created_at)
+  values (target_patient_id, 'qr', 'Public Emergency QR / Code Scan Access', now());
 
   select json_build_object(
+    'patient_name', coalesce(p_name, 'Patient'),
     'blood_group', ep.blood_group,
     'emergency_contact_name', ep.emergency_contact_name,
     'emergency_contact_phone', ep.emergency_contact_phone,
+    'emergency_contact_relation', ep.emergency_contact_relation,
     'allergies', (select coalesce(json_agg(json_build_object(
         'allergen', a.allergen, 'severity', a.severity
       )), '[]'::json) from allergies a where a.patient_id = target_patient_id),
@@ -933,7 +986,10 @@ begin
       )), '[]'::json) from diseases d where d.patient_id = target_patient_id and d.status != 'resolved'),
     'medications', (select coalesce(json_agg(json_build_object(
         'name', m.name, 'dose', m.dose
-      )), '[]'::json) from medications m where m.patient_id = target_patient_id and m.active = true)
+      )), '[]'::json) from medications m where m.patient_id = target_patient_id and m.active = true),
+    'surgeries', (select coalesce(json_agg(json_build_object(
+        'surgery_type', s.surgery_type, 'surgery_date', s.surgery_date, 'hospital_name', s.hospital_name
+      )), '[]'::json) from surgeries s where s.patient_id = target_patient_id)
   ) into result
   from emergency_profile ep where ep.patient_id = target_patient_id;
 

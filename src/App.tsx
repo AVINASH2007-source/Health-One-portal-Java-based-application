@@ -15,7 +15,7 @@ import PatientOverview from './pages/patient/Overview'
 import PatientTimeline from './pages/patient/Timeline'
 import PatientRecords from './pages/patient/Records'
 import PatientMedications from './pages/patient/Medications'
-import PatientEmergencyCard from './pages/patient/EmergencyCard'
+import PatientProfile from './pages/patient/Profile'
 import PatientAnalytics from './pages/patient/Analytics'
 import PatientAppointments from './pages/patient/Appointments'
 
@@ -30,7 +30,7 @@ const overrides: Partial<Record<string, JSX.Element>> = {
   '/patient/timeline': <PatientTimeline />,
   '/patient/records': <PatientRecords />,
   '/patient/medications': <PatientMedications />,
-  '/patient/emergency-card': <PatientEmergencyCard />,
+  '/patient/profile': <PatientProfile />,
   '/patient/analytics': <PatientAnalytics />,
   '/patient/appointments': <PatientAppointments />,
   '/doctor': <DoctorHome />,
@@ -69,7 +69,9 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/login/:role" element={<Login />} />
         <Route path="/select-role" element={<RoleSelect />} />
-        <Route path="/emergency/:patientId" element={<EmergencyAccess />} />
+        <Route path="/emergency/:token" element={<EmergencyAccess />} />
+        <Route path="/emergency" element={<EmergencyAccess />} />
+        <Route path="/patient/emergency-card" element={<Navigate to="/patient/profile" replace />} />
 
         <Route
           path="/patient"

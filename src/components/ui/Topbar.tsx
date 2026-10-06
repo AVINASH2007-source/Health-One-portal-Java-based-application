@@ -20,6 +20,8 @@ import {
   Trash2,
   AlertCircle,
   Loader2,
+  User,
+  QrCode,
 } from 'lucide-react'
 import { Role } from '../../lib/navConfig'
 import { getRoleTheme } from '../../lib/roleTheme'
@@ -359,17 +361,7 @@ export default function Topbar({
         {theme.label} portal
       </div>
 
-      {/* Patient Emergency Shortcut */}
-      {role === 'patient' && (
-        <motion.button
-          whileTap={{ scale: 0.9 }}
-          onClick={() => navigate('/patient/emergency-card')}
-          className="flex items-center gap-1.5 rounded-xl border border-emergency/30 bg-emergency-soft px-2.5 py-2 sm:px-3 text-xs font-semibold text-emergency shrink-0 cursor-pointer"
-        >
-          <ShieldAlert size={15} />
-          <span className="hidden sm:inline">Emergency</span>
-        </motion.button>
-      )}
+
 
       {/* Interactive Notification Bell */}
       <div className="relative shrink-0" ref={notifRef}>
@@ -552,18 +544,33 @@ export default function Topbar({
                 )}
 
                 {role === 'patient' && (
-                  <button
-                    onClick={() => {
-                      setShowProfile(false)
-                      navigate('/patient/appointments')
-                    }}
-                    className="flex w-full items-center justify-between rounded-xl border border-edge bg-panel2 px-3 py-2 text-xs text-ink hover:border-vital/40 transition-colors cursor-pointer"
-                  >
-                    <span className="flex items-center gap-2">
-                      <Calendar size={14} className="text-vital" /> My Appointments
-                    </span>
-                    <ChevronRight size={14} className="text-mist" />
-                  </button>
+                  <>
+                    <button
+                      onClick={() => {
+                        setShowProfile(false)
+                        navigate('/patient/profile')
+                      }}
+                      className="flex w-full items-center justify-between rounded-xl border border-vital/40 bg-vital-soft px-3 py-2 text-xs font-semibold text-vital hover:bg-vital/20 transition-colors cursor-pointer"
+                    >
+                      <span className="flex items-center gap-2">
+                        <QrCode size={14} className="text-vital" /> Profile & Emergency QR
+                      </span>
+                      <ChevronRight size={14} className="text-vital" />
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setShowProfile(false)
+                        navigate('/patient/appointments')
+                      }}
+                      className="flex w-full items-center justify-between rounded-xl border border-edge bg-panel2 px-3 py-2 text-xs text-ink hover:border-vital/40 transition-colors cursor-pointer"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Calendar size={14} className="text-vital" /> My Appointments
+                      </span>
+                      <ChevronRight size={14} className="text-mist" />
+                    </button>
+                  </>
                 )}
 
                 <button

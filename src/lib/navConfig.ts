@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, Activity, FileText, Pill, ShieldAlert, LineChart,
+  LayoutDashboard, Activity, FileText, Pill, LineChart, User,
   Search, Stethoscope, ClipboardPlus, History, CalendarPlus, CalendarCheck,
 } from 'lucide-react'
 
@@ -16,9 +16,9 @@ export const navByRole: Record<Role, { label: string; path: string; icon: any; o
     { label: 'Medical Timeline', path: '/patient/timeline', icon: Activity, owner: 'Member 1' },
     { label: 'Records', path: '/patient/records', icon: FileText, owner: 'Member 1' },
     { label: 'Medications', path: '/patient/medications', icon: Pill, owner: 'Member 1' },
-    { label: 'Emergency Card', path: '/patient/emergency-card', icon: ShieldAlert, owner: 'Member 1' },
     { label: 'Health Analytics', path: '/patient/analytics', icon: LineChart, owner: 'Member 1' },
     { label: 'Appointments', path: '/patient/appointments', icon: CalendarPlus, owner: 'Member 1' },
+    { label: 'Profile & Emergency QR', path: '/patient/profile', icon: User, owner: 'Member 1' },
   ],
   doctor: [
     { label: 'Patient Search', path: '/doctor', icon: Search, owner: 'Member 2' },

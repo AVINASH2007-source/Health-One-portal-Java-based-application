@@ -33,6 +33,7 @@ public class PatientUser extends User implements Exportable {
     private List<String> allergies;
     private List<String> chronicConditions;
     private List<String> activeMedications;
+    private List<String> surgeries;
     private String primaryPhysician;
     private String preferredLanguage;
 
@@ -51,6 +52,7 @@ public class PatientUser extends User implements Exportable {
         this.allergies = new ArrayList<>(builder.allergies);
         this.chronicConditions = new ArrayList<>(builder.chronicConditions);
         this.activeMedications = new ArrayList<>(builder.activeMedications);
+        this.surgeries = new ArrayList<>(builder.surgeries);
         this.primaryPhysician = builder.primaryPhysician;
         this.preferredLanguage = builder.preferredLanguage;
     }
@@ -100,6 +102,10 @@ public class PatientUser extends User implements Exportable {
 
     public List<String> getActiveMedications() { return Collections.unmodifiableList(activeMedications); }
     public void setActiveMedications(List<String> medications) { this.activeMedications = new ArrayList<>(medications); }
+
+    public List<String> getSurgeries() { return Collections.unmodifiableList(surgeries); }
+    public void setSurgeries(List<String> surgeries) { this.surgeries = new ArrayList<>(surgeries); }
+    public void addSurgery(String surgery) { if (surgery != null) this.surgeries.add(surgery); }
 
     public String getPrimaryPhysician() { return primaryPhysician; }
     public void setPrimaryPhysician(String primaryPhysician) { this.primaryPhysician = primaryPhysician; }
@@ -157,6 +163,7 @@ public class PatientUser extends User implements Exportable {
         private List<String> allergies = new ArrayList<>();
         private List<String> chronicConditions = new ArrayList<>();
         private List<String> activeMedications = new ArrayList<>();
+        private List<String> surgeries = new ArrayList<>();
         private String primaryPhysician = "Dr. Sarah Jenkins";
         private String preferredLanguage = "English (US)";
 
@@ -178,6 +185,7 @@ public class PatientUser extends User implements Exportable {
         public Builder allergies(List<String> allergies) { if (allergies != null) this.allergies = allergies; return this; }
         public Builder chronicConditions(List<String> conditions) { if (conditions != null) this.chronicConditions = conditions; return this; }
         public Builder activeMedications(List<String> meds) { if (meds != null) this.activeMedications = meds; return this; }
+        public Builder surgeries(List<String> surgeries) { if (surgeries != null) this.surgeries = surgeries; return this; }
         public Builder primaryPhysician(String physician) { this.primaryPhysician = physician; return this; }
         public Builder preferredLanguage(String language) { this.preferredLanguage = language; return this; }
 

@@ -184,7 +184,30 @@ public class HttpHandlerRegistry implements HttpHandler {
         }
     }
 
+    private static final Map<String, List<Long>> IP_REQUEST_TIMES = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final int MAX_EMERGENCY_REQUESTS_PER_MINUTE = 30;
+
+    private boolean isRateLimited(String clientIp) {
+        long now = System.currentTimeMillis();
+        long windowStart = now - 60_000L;
+        List<Long> times = IP_REQUEST_TIMES.computeIfAbsent(clientIp, k -> new java.util.concurrent.CopyOnWriteArrayList<>());
+        times.removeIf(t -> t < windowStart);
+        if (times.size() >= MAX_EMERGENCY_REQUESTS_PER_MINUTE) {
+            return true;
+        }
+        times.add(now);
+        return false;
+    }
+
     private void handleEmergency(HttpExchange exchange, String method, String path) throws IOException {
+        String clientIp = exchange.getRemoteAddress().getAddress().getHostAddress();
+        String userAgent = exchange.getRequestHeaders().getFirst("User-Agent");
+
+        if (isRateLimited(clientIp)) {
+            sendJsonResponse(exchange, 429, ApiResponse.error("Too Many Requests. Rate limit exceeded (Max 30 req/min).", 429));
+            return;
+        }
+
         if (method.equals("POST") || path.contains("/verify")) {
             String body = readRequestBody(exchange);
             Map<String, String> payload = JsonUtil.parseSimpleJson(body);
@@ -195,11 +218,22 @@ public class HttpHandlerRegistry implements HttpHandler {
 
             Map<String, Object> result = emergencyService.verifyAndGrantEmergencyAccess(patientId, license, doctorName, "Metro General Trauma", reason);
             sendJsonResponse(exchange, 200, ApiResponse.ok("Emergency Override Authorized", result));
+        } else if (method.equals("GET")) {
+            // GET /api/emergency/{token} - Public endpoint without JWT, strictly emergency data
+            String token = path.substring(path.lastIndexOf('/') + 1).trim();
+            if (token.isEmpty() || token.equals("emergency")) {
+                sendJsonResponse(exchange, 404, ApiResponse.error("Emergency token not specified or revoked.", 404));
+                return;
+            }
+
+            try {
+                Map<String, Object> result = emergencyService.getPublicEmergencyData(token, clientIp, userAgent);
+                sendJsonResponse(exchange, 200, ApiResponse.ok("Emergency Access Granted", result));
+            } catch (com.healthone.exception.EntityNotFoundException ex) {
+                sendJsonResponse(exchange, 404, ApiResponse.error("Emergency token invalid, expired, or revoked.", 404));
+            }
         } else {
-            String patientId = path.substring(path.lastIndexOf('/') + 1);
-            if (patientId.isEmpty() || patientId.equals("emergency")) patientId = "P-8821";
-            Map<String, Object> result = emergencyService.verifyAndGrantEmergencyAccess(patientId, "MD-EMR-AUTO", "On-Duty Paramedic", "Emergency Response Unit", "Rapid QR Scan Verification");
-            sendJsonResponse(exchange, 200, ApiResponse.ok("Emergency Access Granted", result));
+            sendJsonResponse(exchange, 405, ApiResponse.error("Method Not Allowed", 405));
         }
     }
 
